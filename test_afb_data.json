@@ -1,0 +1,15 @@
+{
+  "type": "endpoint_captured",
+  "account": "B",
+  "provider": "AFB88",
+  "data": {
+    "HomeName": "Manchester City",
+    "AwayName": "Newcastle United",
+    "HomePrice": 1.85,
+    "AwayPrice": 4.20,
+    "OverPrice": 1.90,
+    "UnderPrice": 1.95,
+    "MatchDate": "2026-02-06",
+    "MatchTime": "20:00"
+  }
+}

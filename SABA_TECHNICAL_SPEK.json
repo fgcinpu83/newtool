@@ -1,0 +1,61 @@
+{
+    "project_name": "Saba Arbitrage Engine",
+    "version": "1.0",
+    "contract_type": "Reverse Engineered API",
+    "target_endpoints": {
+        "odds_monitor": "wss://live.qqpushclient.com/v1",
+        "bet_execution": "/(S(DYNAMIC_SESSION_ID))/Betting/ProcessBet",
+        "heartbeat_tracker": "https://b8d6br.vpe8557.com/api/Kafka/BetTracking"
+    },
+    "authentication_logic": {
+        "session_id_source": "Captured from URL path after login",
+        "auth_header": "Authorization: Bearer [JWT_TOKEN]",
+        "security_hash_key": "sinfo",
+        "token_nature": {
+            "type": "Rolling Token",
+            "behavior": "Expires every 1-5 minutes if connection idles",
+            "requirement": "Must be sniffed from initial handshake URL"
+        }
+    },
+    "bet_payload_structure": {
+        "format": "application/x-www-form-urlencoded",
+        "required_fields": [
+            {
+                "field": "Matchid",
+                "type": "Global ID",
+                "desc": "ID Pertandingan (ex: 119918411)"
+            },
+            {
+                "field": "Oddsid",
+                "type": "Selection ID",
+                "desc": "ID spesifik untuk odds tersebut"
+            },
+            {
+                "field": "Odds",
+                "type": "Decimal",
+                "desc": "Nilai odds saat eksekusi"
+            },
+            {
+                "field": "sinfo",
+                "type": "Security Hash",
+                "desc": "Tanda tangan digital browser (Wajib)"
+            },
+            {
+                "field": "Stake",
+                "type": "Integer",
+                "desc": "Nominal taruhan"
+            },
+            {
+                "field": "AcceptBetterOdds",
+                "type": "Boolean",
+                "desc": "Default: false"
+            }
+        ]
+    },
+    "system_flow_steps": [
+        "1. Discovery: Bot memantau WebSocket untuk mencari perubahan odds.",
+        "2. Normalization: Bot mengubah nama tim Saba ke standar lokal (ex: 'Rio Ave' -> 'RIO_AVE').",
+        "3. Comparison: Bot menghitung margin arbitrage antar provider.",
+        "4. Execution: Jika margin > x%, bot mengambil 'sinfo' terbaru dan menembak ProcessBet."
+    ]
+}

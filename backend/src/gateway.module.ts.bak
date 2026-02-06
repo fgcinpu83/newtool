@@ -1,0 +1,206 @@
+// 🔒 ARCHITECTURE GATE
+// Governed by: ARSITEKTUR_FINAL.md
+// Role: WebSocket Gateway (ws://localhost:3001)
+
+import { WebSocketGateway, WebSocketServer, OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, MessageBody, ConnectedSocket } from '@nestjs/websockets';
+import { Module, OnModuleInit } from '@nestjs/common';
+import * as WebSocket from 'ws';
+import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as path from 'path';
+import { CDPBridgeService } from './shared/cdp-bridge.service';
+import { ContractRegistry } from './workers/contract-registry.service';
+// import { detectProviderFromUrl, SystemConfig, ProviderType } from './providers/account-binding.config';
+
+// 🎯 v10.0: Config cache for gateway routing
+let gatewayConfigCache: SystemConfig | null = null;
+let gatewayConfigCacheTime = 0;
+const GATEWAY_CONFIG_TTL = 5000;
+
+@WebSocketGateway({ transports: ['websocket'] })
+export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
+    @WebSocketServer()
+    server: WebSocket.Server;
+
+    // Internal bus for components to listen to traffic
+    public trafficBus: EventEmitter = new EventEmitter();
+    public commandEvents: EventEmitter = new EventEmitter(); // 🛡️ Backward compatibility
+
+    constructor(
+        private cdpBridge: CDPBridgeService,
+        private contracts: ContractRegistry
+    ) { }
+
+    onModuleInit() {
+        // 🚀 Forward CDP Events to Bridge Clients
+        this.cdpBridge.events.on('cdp_event', (payload) => {
+            this.sendUpdate('cdp_event', payload);
+        });
+    }
+
+    handleConnection(client: WebSocket) {
+        console.log(`[GATEWAY-3001] 📡 Socket Connected`);
+
+        // Handle incoming messages for raw WebSocket
+        client.on('message', (message: Buffer) => {
+            try {
+                const payload = JSON.parse(message.toString());
+                this.handleMessage(client, payload);
+            } catch (err) {
+                console.error('[GATEWAY-3001] Invalid message format:', err);
+            }
+        });
+    }
+
+    handleDisconnect(client: WebSocket) {
+        console.log(`[GATEWAY-3001] ❌ Socket Disconnected`);
+    }
+
+    private handleMessage(client: WebSocket, payload: any) {
+        if (!payload) return;
+
+        // Route based on message type
+        if (payload.type === 'endpoint_captured' || payload.event === 'endpoint_captured') {
+            this.handleEndpointCaptured(client, payload);
+        } else if (payload.type === 'command') {
+            this.handleUICommand(payload.data || payload);
+        } else if (payload.type === 'STREAM_DATA') {
+            this.handleStreamData(client, payload.data || payload);
+        } else if (payload.type === 'cdp_command') {
+            this.handleCDPCommand(client, payload);
+        } else {
+            // Handle generic message
+            this.handleGenericMessage(client, payload);
+        }
+    }
+
+
+    private handleEndpointCaptured(client: WebSocket, data: any): void {
+        // 🛡️ v9.6 FIX: Also unwrap nested data if present
+        let actualData = data;
+        if (data && data.event === 'endpoint_captured' && data.data) {
+            actualData = data.data;
+        }
+        
+        if (!actualData || !actualData.url) return;
+
+        // 🎯 v10.0 CONFIG-DRIVEN ROUTING (TIDAK HARDCODE)
+        // Detect provider dari URL, lalu route ke account berdasarkan USER CONFIG
+        const url = (actualData.url || '').toLowerCase();
+        const frameUrl = (actualData.frameUrl || '').toLowerCase();
+        const urlForDetection = frameUrl.length > url.length ? frameUrl : url;
+        
+        // Step 1: Prefer provider hint from extension (manual selection)
+        if (actualData.provider && typeof actualData.provider === 'string' && actualData.provider.trim() !== '') {
+            // Normalize mapping (SABA -> ISPORT)
+            const hint = actualData.provider.toUpperCase();
+            actualData.detectedProvider = (hint === 'SABA') ? 'ISPORT' : hint;
+        } else {
+            // Fallback: detect provider from URL
+            // const detectedProvider = detectProviderFromUrl(urlForDetection);
+            // if (detectedProvider !== 'UNASSIGNED') {
+            //     actualData.detectedProvider = detectedProvider === 'SABA' ? 'ISPORT' : detectedProvider;
+            // }
+        }
+        
+        // 🛡️ Keep original hint account if provided by extension
+        // Worker will validate against config
+
+        // 🛡️ v9.5 Client Identity Tagging
+        // If actualData contains an account (A/B), tag this socket as an extension for that account
+        if (actualData.account && (actualData.account === 'A' || actualData.account === 'B' || actualData.account === 'DESKTOP')) {
+            (client as any).gravityAccount = actualData.account;
+            (client as any).isExtension = true;
+            (client as any).lastSeen = Date.now();
+        }
+
+        console.log(`[GATEWAY-3001] 🌊 Stream Ingest: ${actualData.url.substring(0, 50)}... [Acc: ${actualData.account || '?'}]`);
+
+        // 🔍 DEBUG SENSOR: Log backend data reception
+        console.log(`%c[DEBUG-SENSOR] 📡 BACKEND-RECEIVED: ${JSON.stringify({
+            stage: 'BACKEND_RECEIVED',
+            timestamp: Date.now(),
+            account: actualData.account,
+            provider: actualData.detectedProvider || actualData.provider,
+            type: actualData.type,
+            url: actualData.url?.substring(0, 100),
+            dataSize: JSON.stringify(actualData).length,
+            clientId: actualData.clientId
+        }, null, 2)}`, 'background:#2196f3;color:#fff;font-weight:bold');
+
+        this.trafficBus.emit('stream_data', actualData);
+        this.commandEvents.emit('endpoint_captured', actualData); // 🛡️ Legacy compatibility
+    }
+
+
+    /**
+     * 🎮 UI COMMAND ROUTER
+     * Handles instructions from Dashboard (Toggle, Open Browser, etc)
+     */
+    private handleUICommand(data: any): void {
+        console.log(`[GATEWAY-3001] 🎮 UI Command: ${data.type}`);
+
+        // 🛡️ v4.0 AUTO-DISCOVERY HANDLER
+        if (data.type === 'register_contract') {
+            const { pattern, provider } = data.data;
+            if (pattern && provider) {
+                const success = this.contracts.registerDynamicMapping(pattern, provider);
+                if (success) {
+                    this.sendUpdate('system_log', {
+                        message: `✅ Contract registered: ${pattern} as ${provider}`,
+                        type: 'SUCCESS'
+                    });
+                }
+            }
+        }
+
+        this.commandEvents.emit('command', data);
+    }
+
+    private handleStreamData(client: WebSocket, data: any): void {
+        this.handleEndpointCaptured(client, data);
+    }
+
+    private async handleCDPCommand(client: WebSocket, payload: any) {
+        const result = await this.cdpBridge.executeCommand(payload);
+        client.send(JSON.stringify({ event: 'cdp_response', data: { sequence: payload.sequence, ...result } }));
+    }
+
+    private handleGenericMessage(client: WebSocket, payload: any) {
+        // Handle any other message types
+        console.log(`[GATEWAY-3001] 📨 Generic message: ${payload.type || 'unknown'}`);
+    }
+
+    // Command channel to extension
+    sendToExtension(command: string, payload: any = {}) {
+        const msg = JSON.stringify({ command, ...payload });
+        this.server.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(msg);
+            }
+        });
+    }
+
+    // 🛡️ v3.0 Compatibility Methods
+    sendUpdate(event: string, data: any) {
+        if (!this.server || !this.server.clients) return;
+        const msg = JSON.stringify({ event, data });
+        this.server.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(msg);
+            }
+        });
+    }
+
+    emitBrowserCommand(account: string, command: string, data: any = {}) {
+        const payload = { account, command, ...data };
+        this.sendUpdate('browser:command', payload);
+    }
+}
+
+@Module({
+    providers: [AppGateway],
+    exports: [AppGateway]
+})
+export class GatewayModule {
+}

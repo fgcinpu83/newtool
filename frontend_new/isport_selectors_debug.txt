@@ -1,0 +1,29 @@
+=== FRAME: https://b8d6oa.lcvc092n.com/(S(Tesqedix504c3aa44fb14e4e8eb83f96584056f5))/NewIndex?lang=en&webskintype=3&scmt=tab02&ssmt=tab02 ===
+TEXT: Sports | TAG: TITLE | CLASS:  | ID: 
+PARENT: HEAD class=
+GRANDPARENT: HTML class=
+-------------------
+TEXT: Alert | TAG: DIV | CLASS: text icon-messageInfo | ID: 
+PARENT: DIV class=heading-default
+GRANDPARENT: DIV class=popupPanel-smaller alertMessage-normal hidden
+-------------------
+TEXT: var IsUseCookie = false ; | TAG: SCRIPT | CLASS:  | ID: 
+PARENT: BODY class=tab02 rwd noNews en
+GRANDPARENT: HTML class=
+-------------------
+
+=== FRAME: about:blank ===
+TEXT: Sports | TAG: TITLE | CLASS:  | ID: 
+PARENT: HEAD class=
+GRANDPARENT: HTML class=
+-------------------
+TEXT: Alert | TAG: DIV | CLASS: text icon-messageInfo | ID: 
+PARENT: DIV class=heading-default
+GRANDPARENT: DIV class=popupPanel-smaller alertMessage-normal hidden
+-------------------
+TEXT: var IsUseCookie = false ; | TAG: SCRIPT | CLASS:  | ID: 
+PARENT: BODY class=tab02 rwd noNews en
+GRANDPARENT: HTML class=
+-------------------
+
+Access Denied

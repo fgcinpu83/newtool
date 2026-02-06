@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPO1221 Helper</title>
+    <style>
+        :root {
+            --primary: #c1a05c;
+            --bg-dark: #0f1115;
+            --bg-card: #1a1d23;
+            --text: #ffffff;
+            --text-dim: #a0a0a0;
+            --accent: #e0b040;
+        }
+
+        body {
+            width: 350px;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1d23 0%, #0f1115 100%);
+            padding: 15px;
+            border-bottom: 2px solid var(--primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 18px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .balance-card {
+            background-color: var(--bg-card);
+            margin: 15px;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            border-left: 4px solid var(--primary);
+        }
+
+        .balance-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 5px;
+        }
+
+        .balance-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .tabs {
+            display: flex;
+            background-color: var(--bg-card);
+            border-top: 1px solid #333;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            font-size: 13px;
+        }
+
+        .tab.active {
+            border-bottom-color: var(--primary);
+            color: var(--primary);
+            background-color: rgba(193, 160, 92, 0.1);
+        }
+
+        .content {
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .match-item {
+            background-color: var(--bg-card);
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .match-teams {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .match-odds {
+            display: flex;
+            gap: 10px;
+        }
+
+        .odds-btn {
+            background: #2a2e36;
+            border: 1px solid #444;
+            color: var(--primary);
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            flex: 1;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: #000;
+            border: none;
+            padding: 10px;
+            width: 100%;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 11px;
+            margin-bottom: 4px;
+            color: var(--text-dim);
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px;
+            background: #2a2e36;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .account-list {
+            margin-top: 15px;
+        }
+
+        .account-item {
+            background: #2a2e36;
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .provider-lights {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+            align-items: center;
+        }
+
+        .provider-lights .light {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #3a3a3a;
+            box-shadow: inset 0 -1px 0 rgba(0,0,0,0.4);
+            border: 1px solid rgba(0,0,0,0.4);
+        }
+
+        .provider-lights .light.on { background: #4CAF50; box-shadow:none; }
+        .provider-lights .light.warn { background: #FFC107; }
+        .provider-lights .light.off { background: #3a3a3a; }
+
+        .delete-btn {
+            color: #ff4444;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>MPO1221 HELPER</h1>
+    </div>
+
+    <div class="balance-card">
+        <div class="balance-label">Current Balance</div>
+        <div id="display-balance" class="balance-value">Rp 0</div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" data-target="sports">Sportsbook</div>
+        <div class="tab" data-target="accounts">Accounts</div>
+    </div>
+
+    <div id="sports-content" class="content">
+        <div id="match-list">
+            <div style="text-align: center; color: var(--text-dim); padding: 20px;">
+                Searching for live matches...
+            </div>
+        </div>
+    </div>
+
+    <div id="accounts-content" class="content hidden">
+        <h3>Manage Virtual Accounts</h3>
+
+        <div style="margin-bottom:12px;">
+            <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--text-dim)">Active Providers</h4>
+            <div class="account-item" id="fixed-panel-A">
+                <div>
+                    <strong>Account A</strong><br>
+                    <small style="color:#a0a0a0">Primary</small>
+                    <div class="provider-lights" data-id="lights-A"></div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+                    <label style="font-size:12px;color:#a0a0a0;display:flex;align-items:center;gap:6px">
+                        <input type="checkbox" class="fixed-acc-toggle" data-acc="A"> Active
+                    </label>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <button class="fixed-inject-btn" data-acc="A" style="padding:6px 8px;font-size:12px">Inject</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="account-item" id="fixed-panel-B">
+                <div>
+                    <strong>Account B</strong><br>
+                    <small style="color:#a0a0a0">Primary</small>
+                    <div class="provider-lights" data-id="lights-B"></div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+                    <label style="font-size:12px;color:#a0a0a0;display:flex;align-items:center;gap:6px">
+                        <input type="checkbox" class="fixed-acc-toggle" data-acc="B"> Active
+                    </label>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <button class="fixed-inject-btn" data-acc="B" style="padding:6px 8px;font-size:12px">Inject</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Active Provider</label>
+            <select id="acc-provider-type">
+                <option value="AFB88">AFB88</option>
+                <option value="ISPORT">ISPORT/SABA</option>
+                <option value="CMD368">CMD368</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Account Name</label>
+            <input type="text" id="acc-name" placeholder="Name as per account">
+        </div>
+        <div class="form-group">
+            <label>Whitelabel URL</label>
+            <input type="text" id="acc-url" placeholder="Enter site URL (e.g., mpo, qq188.com)">
+        </div>
+        <div class="form-group">
+            <label>Account Number</label>
+            <input type="text" id="acc-number" placeholder="Number / Virtual Account">
+        </div>
+        <button id="add-account" class="btn-primary">Add Account</button>
+
+        <div style="margin-top:12px; border-top:1px solid #222; padding-top:12px;">
+            <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--text-dim)">Extension Settings</h4>
+            <div class="form-group">
+                <label>Backend WebSocket URL</label>
+                <input type="text" id="backend-url" placeholder="ws://localhost:8080">
+            </div>
+            <button id="save-backend" class="btn-primary">Save Settings</button>
+        </div>
+
+        <div class="account-list" id="account-list">
+            <!-- Accounts will be listed here -->
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

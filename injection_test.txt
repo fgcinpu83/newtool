@@ -1,0 +1,19 @@
+🔧 Extension Injection Test
+Run this in Chrome DevTools console on the betting site:
+
+1. Check if injected script exists:
+   document.getElementById('gravity-injected-script')
+
+2. Check if global flag is set:
+   window.__GRAVITY_SNIFFER_INJECTED__
+
+3. Check if network interception is active:
+   typeof XMLHttpRequest.prototype.send
+
+4. Check current settings:
+   // Should show activeAccount and activeProvider
+
+Expected results:
+   - gravity-injected-script: <script> element
+   - __GRAVITY_SNIFFER_INJECTED__: true
+   - XMLHttpRequest.prototype.send: 'function'

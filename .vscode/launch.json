@@ -1,0 +1,63 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "🚀 Backend: Full System (Debug)",
+            "args": [
+                "src/main.ts"
+            ],
+            "runtimeArgs": [
+                "-r",
+                "ts-node/register"
+            ],
+            "cwd": "e:/new tools/backend",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "name": "💻 Frontend: Next.js (Client-side Debug)",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/frontend_new"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "🧪 Service: Diagnose Pipeline",
+            "program": "diagnose_pipeline.js",
+            "cwd": "e:/new tools/backend",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "🔄 Backend: Dev (Watch)",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": [
+                "run",
+                "start:debug"
+            ],
+            "cwd": "e:/new tools/backend",
+            "console": "integratedTerminal",
+            "restart": true,
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        }
+    ],
+    "compounds": [
+        {
+            "name": "🔥 FULL STACK: Backend + Frontend",
+            "configurations": [
+                "🚀 Backend: Full System (Debug)",
+                "💻 Frontend: Next.js (Client-side Debug)"
+            ]
+        }
+    ]
+}

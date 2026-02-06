@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity | Control Center v3.1</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0b10;
+            --card: rgba(20, 22, 30, 0.7);
+            --primary: #6366f1;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --glass: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            background: var(--bg);
+            color: white;
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 40%);
+        }
+
+        .sidebar {
+            width: 300px;
+            background: var(--card);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--glass);
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo::before {
+            content: '';
+            width: 12px;
+            height: 12px;
+            background: var(--primary);
+            border-radius: 50%;
+            box-shadow: 0 0 20px var(--primary);
+        }
+
+        main {
+            flex: 1;
+            padding: 60px;
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--glass);
+            border-radius: 24px;
+            padding: 30px;
+            position: relative;
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .status-lamp {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.5s ease;
+        }
+
+        .lamp-inner {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #333;
+        }
+
+        /* Traffic Light Protocol */
+        .status-dead .lamp-inner {
+            background: var(--danger);
+            box-shadow: 0 0 30px var(--danger);
+        }
+
+        .status-heartbeat .lamp-inner {
+            background: var(--warning);
+            box-shadow: 0 0 30px var(--warning);
+        }
+
+        .status-live .lamp-inner {
+            background: var(--success);
+            box-shadow: 0 0 30px var(--success);
+        }
+
+        .provider-status {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .provider-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+        }
+
+        .provider-label {
+            color: #64748b;
+        }
+
+        .mini-lamp {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .mini-lamp-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: currentColor;
+            opacity: 0.7;
+        }
+
+        .status-offline { color: var(--danger); }
+        .status-active { color: var(--success); }
+
+        .toggle-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--danger);
+            transition: .4s;
+            border-radius: 30px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: var(--success);
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(30px);
+        }
+
+        .toggle-labels {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .toggle-labels span {
+            color: #64748b;
+            transition: color 0.3s;
+        }
+
+        .toggle-labels span.active {
+            color: var(--primary);
+        }
+
+        .input-group {
+            margin-top: auto;
+        }
+
+        input {
+            width: 100%;
+            background: var(--glass);
+            border: 1px solid var(--glass);
+            padding: 15px 20px;
+            border-radius: 12px;
+            color: white;
+            font-family: inherit;
+            box-sizing: border-box;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 15px;
+            width: 100%;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .label {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .metric {
+            font-size: 32px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sidebar">
+        <div class="logo">ANTIGRAVITY</div>
+        <div style="flex:1"></div>
+        <div class="card" style="padding: 20px;">
+            <span class="label">Bridge Connection</span>
+            <div id="bridge-status" style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+                <div class="status-indicator"
+                    style="width:8px; height:8px; background:var(--danger); border-radius:50%; box-shadow: 0 0 10px var(--danger);">
+                </div>
+                <span id="bridge-text" style="font-size:14px; color:var(--danger);">DISCONNECTED</span>
+            </div>
+        </div>
+        <div class="card" style="padding: 20px; margin-top: 10px;">
+            <span class="label">System State</span>
+            <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+                <div style="width:8px; height:8px; background:var(--success); border-radius:50%"></div>
+                <span style="font-size:14px">ENGINE ONLINE v3.1</span>
+            </div>
+        </div>
+    </div>
+
+    <main>
+        <div class="grid">
+            <!-- Account A Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <span class="label">ACCOUNT A</span>
+                        <h2 id="providerA-name" style="margin:5px 0">ISPORT</h2>
+                    </div>
+                    <div id="lampA" class="status-lamp status-live">
+                        <div class="lamp-inner"></div>
+                    </div>
+                </div>
+                <div class="metric" id="oddsA">--</div>
+                <span class="label">Odds Transmitted</span>
+
+                <div class="provider-status">
+                    <div class="provider-indicator">
+                        <span class="provider-label">ISPORT:</span>
+                        <div id="isport-lamp" class="mini-lamp status-offline">
+                            <div class="mini-lamp-inner"></div>
+                        </div>
+                    </div>
+                    <div class="provider-indicator">
+                        <span class="provider-label">AFB88:</span>
+                        <div id="afb-lamp" class="mini-lamp status-offline">
+                            <div class="mini-lamp-inner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Account B Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <span class="label">ACCOUNT B</span>
+                        <h2 id="providerB-name" style="margin:5px 0">AFB88</h2>
+                    </div>
+                    <div id="lampB" class="status-lamp status-heartbeat">
+                        <div class="lamp-inner"></div>
+                    </div>
+                </div>
+                <div class="metric" id="oddsB">--</div>
+                <span class="label">Odds Transmitted</span>
+
+                <div class="provider-status">
+                    <div class="provider-indicator">
+                        <span class="provider-label">ISPORT:</span>
+                        <div id="isport-lamp-b" class="mini-lamp status-offline">
+                            <div class="mini-lamp-inner"></div>
+                        </div>
+                    </div>
+                    <div class="provider-indicator">
+                        <span class="provider-label">AFB88:</span>
+                        <div id="afb-lamp-b" class="mini-lamp status-offline">
+                            <div class="mini-lamp-inner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Account Toggle Switch -->
+        <div class="card" style="margin-top: 30px; text-align: center;">
+            <div class="card-header">
+                <div>
+                    <span class="label">ACTIVE ACCOUNT</span>
+                    <h2 style="margin:5px 0">Select Target Account</h2>
+                </div>
+            </div>
+            <div class="toggle-container">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="account-toggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <div class="toggle-labels">
+                    <span id="toggle-label-a" class="active">ACCOUNT A</span>
+                    <span id="toggle-label-b">ACCOUNT B</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 30px;">
+            <div class="card-header">
+                <div>
+                    <span class="label">MARKET SCANNER</span>
+                    <h2 style="margin:5px 0">Live Pairings & Arbitrage</h2>
+                </div>
+                <div id="pair-count" class="metric" style="font-size: 24px; margin:0">0 pairs</div>
+            </div>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--glass); color: #64748b;">
+                            <th style="padding: 15px 10px;">Market</th>
+                            <th style="padding: 15px 10px;">Event</th>
+                            <th style="padding: 15px 10px;">Leg A (AFB88)</th>
+                            <th style="padding: 15px 10px;">Leg B (SABA)</th>
+                            <th style="padding: 15px 10px; text-align: right;">Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scanner-body">
+                        <!-- Pairs will appear here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:30px; flex:1">
+            <span class="label">Live Stream Audit</span>
+            <div id="audit-log"
+                style="font-family: monospace; font-size: 13px; color: #64748b; margin-top:20px; max-height: 250px; overflow-y: auto;">
+                [SYSTEM] Awaiting stream connection from Sensor...<br>
+                [ORCHESTRATOR] WorkerManager v3.1 Handshake ready.
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const bridgeIndicator = document.querySelector('#bridge-status .status-indicator');
+        const bridgeText = document.getElementById('bridge-text');
+        const auditLog = document.getElementById('audit-log');
+        const scannerBody = document.getElementById('scanner-body');
+        const pairCountEl = document.getElementById('pair-count');
+
+        const activePairs = new Map();
+
+        function updateBridgeStatus(connected) {
+            if (connected) {
+                bridgeIndicator.style.background = 'var(--success)';
+                bridgeIndicator.style.boxShadow = '0 0 15px var(--success)';
+                bridgeText.innerText = 'BRIDGE ONLINE';
+                bridgeText.style.color = 'var(--success)';
+            } else {
+                bridgeIndicator.style.background = 'var(--danger)';
+                bridgeIndicator.style.boxShadow = '0 0 15px var(--danger)';
+                bridgeText.innerText = 'BRIDGE OFFLINE';
+                bridgeText.style.color = 'var(--danger)';
+            }
+        }
+
+        function addLog(msg) {
+            const entry = document.createElement('div');
+            const ts = new Date().toLocaleTimeString();
+            entry.innerHTML = `[${ts}] ${msg}`;
+            auditLog.prepend(entry);
+            if (auditLog.children.length > 100) auditLog.lastElementChild.remove();
+        }
+
+        function updateScannerUI() {
+            // Sort by profit descending
+            const pairs = Array.from(activePairs.values())
+                .sort((a, b) => parseFloat(b.profit || 0) - parseFloat(a.profit || 0));
+
+            pairCountEl.innerText = `${pairs.length} pairs`;
+
+            scannerBody.innerHTML = '';
+            pairs.slice(0, 15).forEach(pair => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid var(--glass)';
+                tr.style.transition = 'background 0.3s';
+
+                const profitNum = parseFloat(pair.profit || 0);
+                const profitColor = profitNum > 0 ? 'var(--success)' : (profitNum > -2 ? '#94a3b8' : 'var(--danger)');
+
+                tr.innerHTML = `
+                    <td style="padding: 15px 10px; color: var(--primary); font-weight: 600;">${pair.marketLabel || pair.market}</td>
+                    <td style="padding: 15px 10px;">
+                        <div style="font-weight: 500;">${pair.legA?.home || pair.legB?.home || 'Loading...'}</div>
+                        <div style="font-size: 11px; color: #64748b;">${pair.league}</div>
+                    </td>
+                    <td style="padding: 15px 10px;">${pair.legA ? `${pair.legA.odds.selection} @ <b>${pair.legA.odds.val.toFixed(3)}</b>` : '<span style="color:#ef4444">WAIT</span>'}</td>
+                    <td style="padding: 15px 10px;">${pair.legB ? `${pair.legB.odds.selection} @ <b>${pair.legB.odds.val.toFixed(3)}</b>` : '<span style="color:#ef4444">WAIT</span>'}</td>
+                    <td style="padding: 15px 10px; text-align: right; font-weight: 600; color: ${profitColor}; fontSize: 16px;">${pair.profit}%</td>
+                `;
+                scannerBody.appendChild(tr);
+            });
+        }
+
+        // 🚀 Real Bridge Connection
+        function connect() {
+            const ws = new WebSocket('ws://localhost:8080');
+
+            ws.onopen = () => {
+                updateBridgeStatus(true);
+                addLog('✅ Connected to Antigravity Bridge.');
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+
+                    // 🔍 DEBUG SENSOR: Log backend to UI transmission
+                    console.log(`%c[DEBUG-SENSOR] 📡 BACKEND→UI: ${JSON.stringify({
+                        stage: 'BACKEND_TO_UI',
+                        timestamp: Date.now(),
+                        event: msg.event,
+                        dataKeys: Object.keys(msg.data || {}),
+                        dataSize: JSON.stringify(msg).length
+                    }, null, 2)}`, 'background:#4caf50;color:#fff;font-weight:bold');
+
+                    if (msg.event === 'system_status') {
+                        if (msg.data.activeEventsA !== undefined) document.getElementById('oddsA').innerText = msg.data.activeEventsA;
+                        if (msg.data.activeEventsB !== undefined) document.getElementById('oddsB').innerText = msg.data.activeEventsB;
+                    }
+                    else if (msg.event === 'active_events') {
+                        document.getElementById('oddsA').innerText = msg.data.A;
+                        document.getElementById('oddsB').innerText = msg.data.B;
+                        if (msg.data.pairs !== undefined) pairCountEl.innerText = `${msg.data.pairs} active`;
+                    }
+                    else if (msg.event === 'scanner:update') {
+                        activePairs.set(msg.data.pairId, msg.data);
+                        updateScannerUI();
+                        if (parseFloat(msg.data.profit) > 0) {
+                            addLog(`💰 <b style="color:var(--success)">ARB FOUND:</b> ${msg.data.profit}% - ${msg.data.marketLabel}`);
+                        }
+                    }
+                    else if (msg.event === 'scanner:update_batch') {
+                        msg.data.forEach(p => activePairs.set(p.pairId, p));
+                        updateScannerUI();
+                    }
+                    else if (msg.event === 'browser_controlled') {
+                        addLog(`✅ Browser ${msg.data.action} for Account ${msg.data.account}`);
+                    }
+                    else if (msg.event === 'provider_status') {
+                        updateProviderStatus(msg.data.provider, msg.data.account, msg.data.status);
+                    }
+                } catch (e) { }
+            };
+
+            ws.onclose = () => {
+                updateBridgeStatus(false);
+                addLog('🔌 Connection lost. Retrying...');
+                setTimeout(connect, 3000);
+            };
+        }
+
+        // Account Toggle Logic
+        let activeAccount = 'A';
+        const accountToggle = document.getElementById('account-toggle');
+        const toggleLabelA = document.getElementById('toggle-label-a');
+        const toggleLabelB = document.getElementById('toggle-label-b');
+
+        function updateActiveAccount() {
+            const newAccount = accountToggle.checked ? 'B' : 'A';
+            
+            // If account changed, control browser
+            if (newAccount !== activeAccount) {
+                const action = accountToggle.checked ? 'launch' : 'close';
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        event: 'control_browser',
+                        account: newAccount,
+                        action: action
+                    }));
+                    addLog(`${action === 'launch' ? '🚀' : '🔒'} ${action === 'launch' ? 'Launching' : 'Closing'} browser for Account ${newAccount}...`);
+                }
+            }
+            
+            activeAccount = newAccount;
+            toggleLabelA.classList.toggle('active', !accountToggle.checked);
+            toggleLabelB.classList.toggle('active', accountToggle.checked);
+
+            // Save active account to storage
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                chrome.storage.local.set({ 'ACTIVE_ACCOUNT': activeAccount });
+            }
+        }
+
+        accountToggle.addEventListener('change', updateActiveAccount);
+
+        // Provider Status Updates from Backend
+        function updateProviderStatus(provider, account, status) {
+            const lampId = account === 'A' ? 
+                (provider === 'ISPORT' ? 'isport-lamp' : 'afb-lamp') :
+                (provider === 'ISPORT' ? 'isport-lamp-b' : 'afb-lamp-b');
+            
+            const lamp = document.getElementById(lampId);
+            if (lamp) {
+                lamp.className = `mini-lamp ${status}`;
+            }
+        }
+
+        // Load saved active account
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+            chrome.storage.local.get(['ACTIVE_ACCOUNT'], (result) => {
+                if (result.ACTIVE_ACCOUNT) {
+                    activeAccount = result.ACTIVE_ACCOUNT;
+                    accountToggle.checked = activeAccount === 'B';
+                    updateActiveAccount();
+                }
+            });
+        }
+
+        connect();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPO1221 Helper</title>
+    <style>
+        :root {
+            --primary: #c1a05c;
+            --bg-dark: #0f1115;
+            --bg-card: #1a1d23;
+            --text: #ffffff;
+            --text-dim: #a0a0a0;
+            --accent: #e0b040;
+        }
+
+        body {
+            width: 350px;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1d23 0%, #0f1115 100%);
+            padding: 15px;
+            border-bottom: 2px solid var(--primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 18px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .balance-card {
+            background-color: var(--bg-card);
+            margin: 15px;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            border-left: 4px solid var(--primary);
+        }
+
+        .balance-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 5px;
+        }
+
+        .balance-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .tabs {
+            display: flex;
+            background-color: var(--bg-card);
+            border-top: 1px solid #333;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            font-size: 13px;
+        }
+
+        .tab.active {
+            border-bottom-color: var(--primary);
+            color: var(--primary);
+            background-color: rgba(193, 160, 92, 0.1);
+        }
+
+        .content {
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .match-item {
+            background-color: var(--bg-card);
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .match-teams {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .match-odds {
+            display: flex;
+            gap: 10px;
+        }
+
+        .odds-btn {
+            background: #2a2e36;
+            border: 1px solid #444;
+            color: var(--primary);
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            flex: 1;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: #000;
+            border: none;
+            padding: 10px;
+            width: 100%;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 11px;
+            margin-bottom: 4px;
+            color: var(--text-dim);
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px;
+            background: #2a2e36;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .account-list {
+            margin-top: 15px;
+        }
+
+        .account-item {
+            background: #2a2e36;
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .delete-btn {
+            color: #ff4444;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        /* Provider lights */
+        .provider-lights { display:flex; gap:6px; }
+        .provider-lights .light { width:14px; height:14px; border-radius:50%; background:#2a2e36; border:1px solid #333; }
+        .provider-lights .light.on { background: #4CAF50; box-shadow: 0 0 6px rgba(76,175,80,0.6); }
+        .provider-lights .light.warn { background: #ff9800; box-shadow: 0 0 6px rgba(255,152,0,0.5); }
+        .provider-lights .light.off { background: #2a2e36; opacity:0.45; }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>MPO1221 HELPER</h1>
+    </div>
+
+    <div class="balance-card">
+        <div class="balance-label">Current Balance</div>
+        <div id="display-balance" class="balance-value">Rp 0</div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" data-target="sports">Sportsbook</div>
+        <div class="tab" data-target="accounts">Accounts</div>
+    </div>
+
+    <div id="sports-content" class="content">
+        <div id="match-list">
+            <div style="text-align: center; color: var(--text-dim); padding: 20px;">
+                Searching for live matches...
+            </div>
+        </div>
+    </div>
+
+    <div id="accounts-content" class="content hidden">
+        <h3>Provider Configuration</h3>
+        <div class="form-group">
+            <label>Active Provider</label>
+            <select id="active-provider">
+                <option value="AFB88">AFB88</option>
+                <option value="ISPORT">ISPORT/SABA</option>
+                <option value="CMD368">CMD368</option>
+            </select>
+        </div>
+        <button id="save-provider" class="btn-primary">Save Provider</button>
+
+        <div style="margin-top: 15px; padding: 10px; background: #2a2e36; border-radius: 4px;">
+            <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">
+                Status: <span id="provider-status">Not configured</span>
+            </div>
+            <!-- Provider status lamps for Account A and B -->
+            <div style="display:flex;gap:12px;margin-top:12px;">
+                <div style="flex:1;background:#111;padding:8px;border-radius:6px">
+                    <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">Account A</div>
+                    <div class="provider-lights" data-id="lights-A" style="display:flex;gap:6px"></div>
+                </div>
+                <div style="flex:1;background:#111;padding:8px;border-radius:6px">
+                    <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">Account B</div>
+                    <div class="provider-lights" data-id="lights-B" style="display:flex;gap:6px"></div>
+                </div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-dim);">
+                Current provider will auto-detect from betting site URLs and route data to backend accordingly.
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

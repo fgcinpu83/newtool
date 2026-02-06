@@ -1,0 +1,61 @@
+{
+  "DESKTOP:AFB88": {
+    "provider": "AFB88",
+    "profile": "DYNAMIC",
+    "baseUrl": "https://growingjadeplant.com/",
+    "cookies": "modal65=eyJpdiI6ImZoNGdxMEV2Y2piRVBsaGNCRUNBN1E9PSIsInZhbHVlIjoiaTI3Q1V2bE4xeStxMlR5cXl2WXphWUJGQ0dZMkllZjBiMU5SenRMZGFjbXp5Q2dFNk1PTURiYTNFTEZ2WTNCaCIsIm1hYyI6ImJlOTQ4OTQyYzU3ZWNiMDhkNjA4ODU5OTczM2M3Mjg3ZmYyYjliYzI1ODBhMzk5YjIxYWI1OTVjZjAwMDkwNGMiLCJ0YWciOiIifQ%3D%3D; mpoplay_frontend_session=krXZpVfHNwhj7EiKnDUQuC9B5vcQfxjlOWZQ6S5a; AWSALB=K7LPzbWPpwPQGmXvqYlxWr+7DlK7SKh2AON29w5G6uVyrWRIODCDmRB3GG9Jbr/6WL31eP8FrFiX1nVC66kryKXm6K6TbuE0OJxdBROHk3jhk8Tsy31tx42cco7V; AWSALBCORS=K7LPzbWPpwPQGmXvqYlxWr+7DlK7SKh2AON29w5G6uVyrWRIODCDmRB3GG9Jbr/6WL31eP8FrFiX1nVC66kryKXm6K6TbuE0OJxdBROHk3jhk8Tsy31tx42cco7V; XSRF-TOKEN=eyJpdiI6IkpYSCtYZ2NUK25TMHNNQnhSQTZKNlE9PSIsInZhbHVlIjoiV0RPYnJ1R2UxVzlMWHhDQVJMUGY3ZEZXQlBJMzRGaVFKTkRzUGdzWnA4R2V5dWZoaFRpbHpwWnEvV0NhKzVESWdHVDZWSHVraStaVElwM0xjdUlMMlBEd1lQbVMwMS9wM0RPV3pJYzVBWXl1Ui9YNmZHaHpmNTJYd044dnRtUVQiLCJtYWMiOiIyNzY3MDliMGE2MDI1YTY5ZjZhNzg1M2Q2YTVjMTgyMmVhNmMzMTViZTBkMDQ5NzE1NGJmZWMyOWY4ZWI0ZDI3IiwidGFnIjoiIn0%3D",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "endpoints": {
+      "other": "https://growingjadeplant.com/"
+    },
+    "lastUpdated": 1770308634199
+  },
+  "B:AFB88": {
+    "provider": "AFB88",
+    "profile": "DYNAMIC",
+    "baseUrl": "wss://ws5.prosportslive.net:8887/fnoddsgen",
+    "cookies": "",
+    "userAgent": "",
+    "endpoints": {
+      "other": "wss://ws5.prosportslive.net:8887/fnoddsgen"
+    },
+    "authorization": "ad82385d362848629f118630fd2b0380",
+    "usetoken": "r55qpmlx9u065",
+    "lastUpdated": 1770306910238
+  },
+  "B:ISPORT": {
+    "provider": "ISPORT",
+    "profile": "DYNAMIC",
+    "baseUrl": "https://qq188best.com/games?id=icl&gurl=https:%2f%2fb8d6ob.lcvc092n.com%2fdepositprocesslogin%3ftoken%3dtva5ahcdtuaxppcflpyvw%26lang%3den%26otype%3d2&gamecode=null&device=w&realmoney=true",
+    "cookies": "isShowMaintenanceInGame=; language=en-US; acctInfo={\"sessionId\":\"9d6e82b217124e80a725181ce55d299e\",\"loginId\":\"Gt1888\",\"currency\":\"IDR\",\"balance\":5.93,\"bonus\":0,\"isReferralAccount\":true,\"isAffiliateAccount\":false,\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiMzM3Mjk0QDAxMiIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWVpZGVudGlmaWVyIjoiMzM3Mjk0QDAxMiIsIlRva2VuIjoiOWQ2ZTgyYjIxNzEyNGU4MGE3MjUxODFjZTU1ZDI5OWUiLCJNZXJjaGFudElkIjoiMDEyIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWVtYmVyIiwianRpIjoiMDY1ZWRhMmUtYmUwMS00ZjViLWIzZGMtNDU4YzliZmY1ZDUxIiwiZXhwIjoxNzcwMzA4NDMxLCJpc3MiOiJ3d3cuaW5kb2Nhc2guY29tIiwiYXVkIjoiSWRlbnRpdHlVc2VyIn0.0w8m-JzTq3YLJGCwea8tfWu9rlwe30pdAYk6zkFVVwc\",\"refreshToken\":\"E47F6A8EC9BC791FDBD6834CFEB5806FC1A2B68DD813D5D8BA5C1D09B48207E7C0A39C7DEB70D798\",\"expiryUtcDate\":\"2026-02-05T16:20:31.6997229Z\"}; sessionId=9d6e82b217124e80a725181ce55d299e; token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiMzM3Mjk0QDAxMiIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWVpZGVudGlmaWVyIjoiMzM3Mjk0QDAxMiIsIlRva2VuIjoiOWQ2ZTgyYjIxNzEyNGU4MGE3MjUxODFjZTU1ZDI5OWUiLCJNZXJjaGFudElkIjoiMDEyIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWVtYmVyIiwianRpIjoiMDY1ZWRhMmUtYmUwMS00ZjViLWIzZGMtNDU4YzliZmY1ZDUxIiwiZXhwIjoxNzcwMzA4NDMxLCJpc3MiOiJ3d3cuaW5kb2Nhc2guY29tIiwiYXVkIjoiSWRlbnRpdHlVc2VyIn0.0w8m-JzTq3YLJGCwea8tfWu9rlwe30pdAYk6zkFVVwc; refreshToken=E47F6A8EC9BC791FDBD6834CFEB5806FC1A2B68DD813D5D8BA5C1D09B48207E7C0A39C7DEB70D798; srv=552407a83cc26d8dfde520a6704b0ac9",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "endpoints": {
+      "other": "https://qq188best.com/games?id=icl&gurl=https:%2f%2fb8d6ob.lcvc092n.com%2fdepositprocesslogin%3ftoken%3dtva5ahcdtuaxppcflpyvw%26lang%3den%26otype%3d2&gamecode=null&device=w&realmoney=true"
+    },
+    "lastUpdated": 1770308627426
+  },
+  "A:ISPORT": {
+    "provider": "ISPORT",
+    "profile": "DYNAMIC",
+    "baseUrl": "https://qq188best.com/games?id=icl&gurl=https:%2f%2fb8d6ob.lcvc092n.com%2fdepositprocesslogin%3ftoken%3dtva5ahcdtuaxppcflpyvw%26lang%3den%26otype%3d2&gamecode=null&device=w&realmoney=true",
+    "cookies": "isShowMaintenanceInGame=; language=en-US; acctInfo={\"sessionId\":\"9d6e82b217124e80a725181ce55d299e\",\"loginId\":\"Gt1888\",\"currency\":\"IDR\",\"balance\":5.93,\"bonus\":0,\"isReferralAccount\":true,\"isAffiliateAccount\":false,\"token\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiMzM3Mjk0QDAxMiIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWVpZGVudGlmaWVyIjoiMzM3Mjk0QDAxMiIsIlRva2VuIjoiOWQ2ZTgyYjIxNzEyNGU4MGE3MjUxODFjZTU1ZDI5OWUiLCJNZXJjaGFudElkIjoiMDEyIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWVtYmVyIiwianRpIjoiMDY1ZWRhMmUtYmUwMS00ZjViLWIzZGMtNDU4YzliZmY1ZDUxIiwiZXhwIjoxNzcwMzA4NDMxLCJpc3MiOiJ3d3cuaW5kb2Nhc2guY29tIiwiYXVkIjoiSWRlbnRpdHlVc2VyIn0.0w8m-JzTq3YLJGCwea8tfWu9rlwe30pdAYk6zkFVVwc\",\"refreshToken\":\"E47F6A8EC9BC791FDBD6834CFEB5806FC1A2B68DD813D5D8BA5C1D09B48207E7C0A39C7DEB70D798\",\"expiryUtcDate\":\"2026-02-05T16:20:31.6997229Z\"}; sessionId=9d6e82b217124e80a725181ce55d299e; token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiMzM3Mjk0QDAxMiIsImh0dHA6Ly9zY2hlbWFzLnhtbHNvYXAub3JnL3dzLzIwMDUvMDUvaWRlbnRpdHkvY2xhaW1zL25hbWVpZGVudGlmaWVyIjoiMzM3Mjk0QDAxMiIsIlRva2VuIjoiOWQ2ZTgyYjIxNzEyNGU4MGE3MjUxODFjZTU1ZDI5OWUiLCJNZXJjaGFudElkIjoiMDEyIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWVtYmVyIiwianRpIjoiMDY1ZWRhMmUtYmUwMS00ZjViLWIzZGMtNDU4YzliZmY1ZDUxIiwiZXhwIjoxNzcwMzA4NDMxLCJpc3MiOiJ3d3cuaW5kb2Nhc2guY29tIiwiYXVkIjoiSWRlbnRpdHlVc2VyIn0.0w8m-JzTq3YLJGCwea8tfWu9rlwe30pdAYk6zkFVVwc; refreshToken=E47F6A8EC9BC791FDBD6834CFEB5806FC1A2B68DD813D5D8BA5C1D09B48207E7C0A39C7DEB70D798; srv=552407a83cc26d8dfde520a6704b0ac9",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "endpoints": {
+      "other": "https://qq188best.com/games?id=icl&gurl=https:%2f%2fb8d6ob.lcvc092n.com%2fdepositprocesslogin%3ftoken%3dtva5ahcdtuaxppcflpyvw%26lang%3den%26otype%3d2&gamecode=null&device=w&realmoney=true"
+    },
+    "lastUpdated": 1770306901878
+  },
+  "A:AFB88": {
+    "provider": "AFB88",
+    "profile": "DYNAMIC",
+    "baseUrl": "https://api.jps9.net/w0v2/pub/wfmain01.html?lang=en-au&acctype=id&pagetype=1&us=r55qpmlx9u065&k=ad82385d362848629f118630fd2b0380&tp=&cy=idr&lg=ggcs&host=&hodds=0&oddsmode=single&ismmy=0&isiosiframe=false",
+    "cookies": "iframecookie=1; cookie_line=1; cookie_mt=1; cookie_ov=0; cookie_tf=0; cookie_timess=0; cookie_mt_ori=1; RunningTicket=0; cookie_FAV=%7B%7D; path=/; ASP.NET_SessionId=leco2psonm3lcv5mnfm1ukst; api_l_s=leco2psonm3lcv5mnfm1ukst",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    "endpoints": {
+      "other": "https://api.jps9.net/w0v2/pub/wfmain01.html?lang=en-au&acctype=id&pagetype=1&us=r55qpmlx9u065&k=ad82385d362848629f118630fd2b0380&tp=&cy=idr&lg=ggcs&host=&hodds=0&oddsmode=single&ismmy=0&isiosiframe=false"
+    },
+    "lastUpdated": 1770308634228,
+    "authorization": "ad82385d362848629f118630fd2b0380",
+    "usetoken": "r55qpmlx9u065"
+  }
+}

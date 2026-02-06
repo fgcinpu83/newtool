@@ -1,0 +1,52 @@
+{
+    "manifest_version": 3,
+    "name": "Antigravity Desktop Bridge",
+    "version": "3.0.0",
+    "description": "Desktop session capture for arbitrage system",
+    "permissions": [
+        "cookies",
+        "storage",
+        "tabs",
+        "alarms",
+        "declarativeNetRequest",
+        "declarativeNetRequestFeedback",
+        "scripting",
+        "offscreen"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_start",
+            "all_frames": true,
+            "match_about_blank": true
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icon16.png",
+            "48": "icon48.png"
+        }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "injected.js"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}

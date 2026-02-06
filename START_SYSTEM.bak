@@ -1,0 +1,124 @@
+@echo off
+TITLE Antigravity Orchestrator v3.2.0 (Improved Starter)
+SETLOCAL EnableDelayedExpansion
+
+REM Backup the original script (if not already backed up)
+if not exist "%~dp0START_SYSTEM.bak" copy "%~dp0START_SYSTEM.bat" "%~dp0START_SYSTEM.bak" >nul 2>&1
+
+echo.
+echo  ╔═══════════════════════════════════════════════════════════╗
+echo  ║          ANTIGRAVITY ORBIT STARTER v3.2.0                 ║
+echo  ╠═══════════════════════════════════════════════════════════╣
+echo  ║  Single-click starter: Redis (Docker), Backend, Frontend   ║
+echo  ║  and Chrome with extension.                               ║
+echo  ╚═══════════════════════════════════════════════════════════╝
+echo.
+
+REM Quick checks
+where npm >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] 'npm' tidak ditemukan! Pastikan Node.js sudah diinstal.
+    pause
+    exit /b
+)
+
+pushd "%~dp0"
+set "ROOT=%~dp0"
+echo [SYSTEM] Lokasi Skrip: "%ROOT%"
+echo.
+
+:: 0. Start Redis via Docker if available and not running
+echo [0/4] Memeriksa Redis (Docker)...
+where docker >nul 2>nul
+if %ERRORLEVEL% EQU 0 (
+    docker ps --format "{{.Names}}" | findstr /I "redis-local" >nul 2>nul
+    if %ERRORLEVEL% NEQ 0 (
+        echo [INFO] Redis container tidak ditemukan. Menjalankan docker redis-local...
+        docker run -d --name redis-local -p 6379:6379 redis:7 >nul 2>&1
+        if %ERRORLEVEL% EQU 0 (echo [OK] Redis (docker) started) else echo [WARN] Gagal memulai Redis container
+    ) else (
+        echo [OK] Redis container redis-local sudah berjalan
+    )
+) else (
+    echo [INFO] Docker tidak ditemukan; pastikan Redis berjalan di host jika diperlukan.
+)
+
+:: 1. START BACKEND (compile first)
+echo.
+echo [1/4] Menjalankan Backend Engine (compile -> start)...
+if exist "%ROOT%backend" (
+    pushd "%ROOT%backend"
+    if not exist "node_modules" (
+        echo [!] node_modules tidak ada di backend. Menginstall...
+        call npm install
+    )
+    echo [INFO] Compiling TypeScript (npx tsc --project tsconfig.json)...
+    start "AG-BACKEND-BUILD" cmd /k "title AG-BACKEND-BUILD && npx tsc --project tsconfig.json && echo [BUILD] Done && pause"
+    timeout /t 2 /nobreak >nul
+    start "AG-BACKEND" cmd /k "title AG-BACKEND && npx tsc --project tsconfig.json && npm run start"
+    popd
+) else (
+    echo [ERROR] Folder backend tidak ditemukan di: "%ROOT%backend"
+)
+
+:: 2. START FRONTEND
+echo.
+echo [2/4] Menjalankan Frontend Dashboard...
+if exist "%ROOT%frontend_new" (
+    pushd "%ROOT%frontend_new"
+    if not exist "node_modules" (
+        echo [!] node_modules tidak ada di frontend_new. Menginstall...
+        call npm install
+    )
+    REM prefer 'npm run start' if available, else 'npm run dev'
+    call npm run --silent start >nul 2>nul
+    if %ERRORLEVEL% EQU 0 (
+        start "AG-FRONTEND" cmd /k "title AG-FRONTEND && npm run start"
+    ) else (
+        start "AG-FRONTEND" cmd /k "title AG-FRONTEND && npm run dev"
+    )
+    popd
+) else (
+    echo [ERROR] Folder frontend_new tidak ditemukan di: "%ROOT%frontend_new"
+)
+
+echo.
+echo [!] MENUNGGU SERVICES SIAP (15 DETIK)...
+timeout /t 15 /nobreak >nul
+
+:: 3. OPEN CHROME WITH EXTENSION (optional)
+echo.
+echo [3/4] Membuka Chrome + Sensor Extension (optional)...
+set "CHROME_PATH=%CHROME_PATH%"
+if not exist "%CHROME_PATH%" set "CHROME_PATH=C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+
+set "EXT_PATH=%ROOT%extension_desktop"
+set "USER_DATA=%ROOT%userdata"
+if "%FRONTEND_URL%"=="" (
+    set "FRONTEND_URL=http://localhost:3000"
+)
+
+if exist "%CHROME_PATH%" (
+    start "" "%CHROME_PATH%" ^
+        --load-extension="%EXT_PATH%" ^
+        --user-data-dir="%USER_DATA%" ^
+        --remote-debugging-port=9222 ^
+        --no-first-run ^
+        "%FRONTEND_URL%"
+) else (
+    echo [WARN] Chrome.exe tidak ditemukan. Silakan buka %FRONTEND_URL% secara manual.
+)
+
+:: 4. OPTIONAL: Launch helper scripts (socketio gateway etc.) if present
+echo.
+echo [4/4] Menjalankan optional helpers (socketio_gateway.js)...
+if exist "%ROOT%backend\socketio_gateway.js" (
+    start "AG-SOCKETIO" cmd /k "title AG-SOCKETIO && node \"%ROOT%backend\socketio_gateway.js\""
+) else (
+    echo [INFO] socketio_gateway.js tidak ditemukan atau tidak diperlukan.
+)
+
+echo.
+echo ✅ SEMUA PERINTAH START TELAH DIPICU. Periksa jendela terminal terpisah untuk output.
+echo.
+pause

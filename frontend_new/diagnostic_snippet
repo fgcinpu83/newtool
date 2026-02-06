@@ -1,0 +1,41 @@
+(function () {
+    console.clear();
+    console.log("%c 🕵️ GRAVITY DIAGNOSTIC STARTING... ", "background: #f00; color: #fff; font-size: 20px; font-weight: bold;");
+
+    const targetKeywords = ['match', 'odds', 'getdata', 'football', 'soccer', 'getmatch'];
+
+    // 1. Monitor XHR (XMLHttpRequest)
+    const oldOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+        this.addEventListener('load', function () {
+            const lowerUrl = url.toLowerCase();
+            if (targetKeywords.some(key => lowerUrl.includes(key))) {
+                console.log(`%c [XHR-DETECTED] URL: ${url} `, "color: #00ff00; font-weight: bold;");
+                try {
+                    const response = JSON.parse(this.responseText);
+                    console.log("📦 DATA PREVIEW:", response);
+                } catch (e) {
+                    console.log("📦 RAW TEXT (Non-JSON):", this.responseText.substring(0, 200));
+                }
+            }
+        });
+        return oldOpen.apply(this, arguments);
+    };
+
+    // 2. Monitor FETCH API
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+        const response = await originalFetch(...args);
+        const url = args[0];
+        if (typeof url === 'string' && targetKeywords.some(key => url.toLowerCase().includes(key))) {
+            const clone = response.clone();
+            clone.json().then(data => {
+                console.log(`%c [FETCH-DETECTED] URL: ${url} `, "color: #00ccff; font-weight: bold;");
+                console.log("📦 DATA PREVIEW:", data);
+            }).catch(() => { });
+        }
+        return response;
+    };
+
+    console.log("%c STATUS: Sniffer is Active. Silakan klik menu Football atau Refresh halaman Sportsbook. ", "color: #ffcc00;");
+})();
