@@ -1,12 +1,15 @@
 /**
- * ANTIGRAVITY - Tab Focus Service
- * 
- * Service untuk focus tab saat user klik tombol BET
- * Menggunakan Chrome DevTools Protocol
+ * TAB FOCUS SERVICE v2.0 - CONSTITUTION COMPLIANT
+ *
+ * SYSTEM CONSTITUTION §III.1:
+ * - DILARANG membuat koneksi CDP langsung
+ * - HARUS memanggil ChromeConnectionManager
+ *
+ * Service untuk focus tab saat user klik tombol BET.
+ * ALL Chrome access goes through ChromeConnectionManager.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { ChromeConnector } from '../chrome/chrome-connector';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 
 interface TabMapping {
@@ -18,20 +21,15 @@ interface TabMapping {
 @Injectable()
 export class TabFocusService {
     private readonly logger = new Logger(TabFocusService.name);
-    private connector: ChromeConnector;
     private tabMappings: TabMapping[] = [];
 
-    constructor(private chromeManager: ChromeConnectionManager) {
-        this.connector = new ChromeConnector(9222, chromeManager);
-    }
+    constructor(private chromeManager: ChromeConnectionManager) {}
 
     /**
      * Register account-to-URL mapping
      */
     registerTab(account: 'A' | 'B', provider: string, urlPattern: string): void {
-        // Remove existing mapping for this account
         this.tabMappings = this.tabMappings.filter(t => t.account !== account);
-        
         this.tabMappings.push({ account, provider, urlPattern });
         this.logger.log(`Registered tab mapping: ${account} -> ${provider} (${urlPattern})`);
     }
@@ -46,42 +44,36 @@ export class TabFocusService {
         error?: string;
     }> {
         const mapping = this.tabMappings.find(t => t.account === account);
-        
+
         if (!mapping) {
-            return {
-                success: false,
-                error: `No URL registered for account ${account}`
-            };
+            return { success: false, error: `No URL registered for account ${account}` };
         }
 
+        const port = ChromeConnectionManager.portFor(account);
+
         try {
-            const tabs = await this.connector.findTabsByUrl(mapping.urlPattern);
-            
-            if (tabs.length === 0) {
+            // ALL access through manager — no direct CDP
+            const tabs = await this.chromeManager.getTabs(port);
+            const matches = tabs.filter(t => t.url.includes(mapping.urlPattern));
+
+            if (matches.length === 0) {
                 return {
                     success: false,
-                    error: `No tab found for ${mapping.provider} (${mapping.urlPattern})`
+                    error: `No tab found for ${mapping.provider} (${mapping.urlPattern})`,
                 };
             }
 
-            await this.connector.focusTab(tabs[0]);
-            
-            return {
-                success: true,
-                tabTitle: tabs[0].title
-            };
+            await this.chromeManager.focusTab(port, matches[0].id);
+            return { success: true, tabTitle: matches[0].title };
 
         } catch (error: any) {
             this.logger.error(`Failed to focus tab for account ${account}:`, error);
-            return {
-                success: false,
-                error: error.message || 'Failed to connect to Chrome'
-            };
+            return { success: false, error: error.message || 'Failed to connect to Chrome' };
         }
     }
 
     /**
-     * Check Chrome connection status
+     * Check Chrome connection status (via manager — no side effects)
      */
     async getStatus(): Promise<{
         chromeConnected: boolean;
@@ -89,18 +81,18 @@ export class TabFocusService {
         registeredAccounts: { account: string; provider: string; url: string }[];
         error?: string;
     }> {
-        const chromeConnected = await this.chromeManager.checkConnection(9222);
-        const tabCount = chromeConnected ? await this.chromeManager.getTabsCount(9222) : 0;
-        
+        const info = this.chromeManager.getInfo(9222);
+        const chromeConnected = info.state === 'CONNECTED';
+
         return {
             chromeConnected,
-            tabCount,
+            tabCount: info.tabs,
             registeredAccounts: this.tabMappings.map(t => ({
                 account: t.account,
                 provider: t.provider,
-                url: t.urlPattern
+                url: t.urlPattern,
             })),
-            error: chromeConnected ? undefined : 'Chrome not reachable on port 9222'
+            error: chromeConnected ? undefined : `Chrome not reachable on port 9222 (state: ${info.state})`,
         };
     }
 
@@ -113,17 +105,16 @@ export class TabFocusService {
         matchedAccount?: 'A' | 'B';
     }[]> {
         try {
-            const tabs = await this.connector.getTabs();
-            
+            const tabs = await this.chromeManager.getTabs(9222);
+
             return tabs.map(tab => {
-                const mapping = this.tabMappings.find(m => 
-                    tab.url.includes(m.urlPattern)
+                const mapping = this.tabMappings.find(m =>
+                    tab.url.includes(m.urlPattern),
                 );
-                
                 return {
                     url: tab.url,
                     title: tab.title,
-                    matchedAccount: mapping?.account
+                    matchedAccount: mapping?.account,
                 };
             });
 

@@ -1,24 +1,17 @@
 /**
- * ANTIGRAVITY - Chrome DevTools Protocol Connector
- * 
- * Connects to Chrome's Remote Debugging Port to:
- * 1. List all open tabs
- * 2. Attach to specific tabs for monitoring
- * 3. Execute scripts in page context
- * 4. Focus tabs for manual betting
- * 5. Open new tabs with URLs
+ * ChromeConnector v3.0 - CONSTITUTION COMPLIANT
+ *
+ * SYSTEM CONSTITUTION §III.1:
+ * - DILARANG membuat koneksi CDP langsung
+ * - HARUS memanggil ChromeConnectionManager untuk semua Chrome HTTP
+ *
+ * This file is a THIN WRAPPER around ChromeConnectionManager.
+ * It only manages WebSocket connections for CDP commands (script execution, navigation).
+ * All HTTP calls (tabs, open, focus, status) go through the manager.
  */
 
 import WebSocket from 'ws';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
-
-interface ChromeTab {
-    id: string;
-    title: string;
-    url: string;
-    type: string;
-    webSocketDebuggerUrl?: string;
-}
 
 interface CDPMessage {
     id: number;
@@ -28,49 +21,47 @@ interface CDPMessage {
     error?: any;
 }
 
+export interface ChromeTab {
+    id: string;
+    title: string;
+    url: string;
+    type: string;
+    webSocketDebuggerUrl?: string;
+}
+
 export class ChromeConnector {
-    private debugPort: number;
+    private readonly port: number;
+    private readonly manager: ChromeConnectionManager;
     private connections: Map<string, WebSocket> = new Map();
     private messageId: number = 1;
-    private connectionManager: ChromeConnectionManager;
 
-    constructor(debugPort: number = 9222, connectionManager: ChromeConnectionManager) {
-        this.debugPort = debugPort;
-        this.connectionManager = connectionManager;
+    constructor(port: number, manager: ChromeConnectionManager) {
+        this.port = port;
+        this.manager = manager;
     }
 
-    /**
-     * Check if Chrome is reachable
-     */
-    async isConnected(): Promise<boolean> {
-        return await this.connectionManager.checkConnection(this.debugPort);
+    // ─── DELEGATED TO MANAGER (no direct HTTP) ──────
+
+    /** Check if Chrome is reachable — delegates to manager.attach() */
+    async ensureConnected(): Promise<boolean> {
+        const info = await this.manager.attach(this.port);
+        return info.state === 'CONNECTED';
     }
 
-    /**
-     * Get list of all open tabs
-     */
+    /** Get list of page tabs — delegates to manager */
     async getTabs(): Promise<ChromeTab[]> {
-        const response = await fetch(`http://localhost:${this.debugPort}/json`);
-        const tabs = await response.json();
-        return tabs.filter((t: ChromeTab) => t.type === 'page');
+        return await this.manager.getTabs(this.port);
     }
 
-    /**
-     * Find tabs by URL pattern - checks domain match
-     */
+    /** Find tabs by URL pattern */
     async findTabsByUrl(pattern: string | RegExp): Promise<ChromeTab[]> {
         const tabs = await this.getTabs();
         return tabs.filter(tab => {
             if (typeof pattern === 'string') {
-                // Extract domain from pattern
                 try {
                     const patternDomain = new URL(pattern.startsWith('http') ? pattern : `https://${pattern}`).hostname;
                     const tabDomain = new URL(tab.url).hostname;
-                    const match = tabDomain === patternDomain || tabDomain.endsWith(`.${patternDomain}`);
-                    if (match) {
-                        console.log(`[CDP] 🔍 Found existing tab for domain ${patternDomain}: ${tab.url}`);
-                    }
-                    return match;
+                    return tabDomain === patternDomain || tabDomain.endsWith(`.${patternDomain}`);
                 } catch {
                     return tab.url.includes(pattern);
                 }
@@ -79,103 +70,58 @@ export class ChromeConnector {
         });
     }
 
-    /**
-     * Open a new tab with URL
-     */
+    /** Open a new tab — delegates to manager */
     async openNewTab(url: string): Promise<ChromeTab | null> {
-        try {
-            // Ensure URL has protocol
-            let fullUrl = url;
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                fullUrl = `https://${url}`;
-            }
-
-            // Use Chrome's endpoint to create new tab
-            // Chrome CDP expects URL directly after /json/new?
-            const endpoint = `http://localhost:${this.debugPort}/json/new?${fullUrl}`;
-            console.log(`[CDP] Opening new tab: ${fullUrl}`);
-            
-            // Use PUT method (Chrome CDP standard)
-            const response = await fetch(endpoint, {
-                method: 'PUT',
-                signal: AbortSignal.timeout(5000)
-            });
-            
-            if (response.ok) {
-                const tab = await response.json();
-                console.log(`[CDP] ✅ Opened new tab: ${tab.id}`);
-                return tab;
-            }
-            
-            // Only try GET if PUT explicitly failed (not network error)
-            if (response.status >= 400) {
-                console.log(`[CDP] PUT returned ${response.status}, trying GET...`);
-                const fallbackResponse = await fetch(endpoint, {
-                    signal: AbortSignal.timeout(5000)
-                });
-                
-                if (fallbackResponse.ok) {
-                    const tab = await fallbackResponse.json();
-                    console.log(`[CDP] ✅ Opened new tab (GET): ${tab.id}`);
-                    return tab;
-                }
-            }
-            
-            console.error(`[CDP] Failed to open tab, status: ${response.status}`);
-            return null;
-        } catch (error) {
-            console.error('[CDP] Failed to open new tab:', error);
-            return null;
-        }
+        return await this.manager.openTab(this.port, url);
     }
 
-    /**
-     * Connect to a specific tab via WebSocket
-     */
+    /** Focus a tab — delegates to manager */
+    async focusTab(tab: ChromeTab): Promise<void> {
+        await this.manager.focusTab(this.port, tab.id);
+    }
+
+    // ─── WEBSOCKET CDP COMMANDS (only WS here) ──────
+
+    /** Connect to a specific tab via WebSocket for CDP commands */
     async connectToTab(tab: ChromeTab): Promise<WebSocket> {
         if (!tab.webSocketDebuggerUrl) {
             throw new Error(`Tab ${tab.id} has no WebSocket URL`);
         }
 
+        // Re-use existing connection
         if (this.connections.has(tab.id)) {
             return this.connections.get(tab.id)!;
         }
 
-        // Check if we're already attached to this Chrome instance
-        if (!this.connectionManager.isAttached(this.debugPort)) {
-            const attached = await this.connectionManager.attachToChrome(this.debugPort);
-            if (!attached) {
-                throw new Error(`Cannot attach to Chrome on port ${this.debugPort} - already attached or not running`);
-            }
+        // Manager must be CONNECTED before we open a WS
+        if (!this.manager.isConnected(this.port)) {
+            throw new Error(`ChromeConnectionManager not CONNECTED on port ${this.port}`);
         }
 
         return new Promise((resolve, reject) => {
             const ws = new WebSocket(tab.webSocketDebuggerUrl!);
-            
+
             ws.on('open', () => {
-                console.log(`[CDP] Connected to tab: ${tab.title}`);
+                console.log(`[ChromeConnector] WS connected to tab: ${tab.title}`);
                 this.connections.set(tab.id, ws);
                 resolve(ws);
             });
 
             ws.on('error', (err) => {
-                console.error(`[CDP] Connection error:`, err);
+                console.error(`[ChromeConnector] WS error:`, err);
                 reject(err);
             });
 
             ws.on('close', () => {
-                console.log(`[CDP] Disconnected from tab: ${tab.title}`);
                 this.connections.delete(tab.id);
             });
         });
     }
 
-    /**
-     * Send CDP command to tab
-     */
+    /** Send CDP command over WebSocket */
     async sendCommand(ws: WebSocket, method: string, params: any = {}): Promise<any> {
         const id = this.messageId++;
-        
+
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error(`Timeout waiting for response to ${method}`));
@@ -199,238 +145,28 @@ export class ChromeConnector {
         });
     }
 
-    /**
-     * Focus a specific tab (bring to front)
-     */
-    async focusTab(tab: ChromeTab): Promise<void> {
-        // Use the activate endpoint
-        try {
-            await fetch(`http://localhost:${this.debugPort}/json/activate/${tab.id}`);
-            console.log(`[CDP] Focused tab: ${tab.title}`);
-        } catch (error) {
-            console.error(`[CDP] Failed to focus tab:`, error);
-        }
-    }
-
-    /**
-     * Execute JavaScript in page context
-     */
+    /** Execute JavaScript in page context */
     async executeScript(tab: ChromeTab, script: string): Promise<any> {
         const ws = await this.connectToTab(tab);
         const result = await this.sendCommand(ws, 'Runtime.evaluate', {
             expression: script,
             returnByValue: true,
-            awaitPromise: true
+            awaitPromise: true,
         });
         return result.result?.value;
     }
 
-    /**
-     * Navigate existing tab to URL
-     */
+    /** Navigate existing tab to URL */
     async navigateTo(tab: ChromeTab, url: string): Promise<void> {
         const ws = await this.connectToTab(tab);
         await this.sendCommand(ws, 'Page.navigate', { url });
     }
 
-    /**
-     * Disconnect all connections
-     */
+    /** Disconnect all WebSocket connections */
     disconnect(): void {
-        for (const [id, ws] of this.connections) {
+        for (const [_, ws] of this.connections) {
             ws.close();
         }
         this.connections.clear();
-        this.connectionManager.detachFromChrome(this.debugPort);
-    }
-}
-
-// ============================================
-// SINGLETON INSTANCE
-// ============================================
-let connectorInstance: ChromeConnector | null = null;
-
-export function getChromeConnector(): ChromeConnector {
-    if (!connectorInstance) {
-        const globalManager = ChromeConnectionManager.getGlobalInstance();
-        if (!globalManager) {
-            throw new Error('ChromeConnectionManager not initialized');
-        }
-        connectorInstance = new ChromeConnector(9222, globalManager);
-    }
-    return connectorInstance;
-}
-
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-// Global lock to prevent simultaneous opens for same account
-const openingLocks = new Map<string, boolean>();
-const recentOpens = new Map<string, number>(); // Track recent opens per domain
-
-/**
- * Open URL in Chrome - Creates new tab or focuses existing
- * Includes mutex lock and deduplication
- */
-export async function openUrlInChrome(url: string, account: 'A' | 'B'): Promise<{
-    success: boolean;
-    action: 'opened' | 'focused' | 'failed' | 'skipped';
-    tabTitle?: string;
-    error?: string;
-}> {
-    console.log(`[AUDIT-CONNECTOR] 🚀 openUrlInChrome CALLED: account=${account} url=${url}`);
-    const connector = getChromeConnector();
-    
-    // Extract domain for deduplication
-    let domain = url;
-    try {
-        domain = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
-    } catch {}
-    
-    const lockKey = `${account}:${domain}`;
-    console.log(`[AUDIT-CONNECTOR] 🔑 lockKey=${lockKey} currentLocks=${[...openingLocks.keys()].join(',')}`);
-    
-    // Check if we're already opening for this account+domain
-    if (openingLocks.get(lockKey)) {
-        console.log(`[CDP] 🚫 Already opening ${domain} for Account ${account} - skipped`);
-        return { success: true, action: 'skipped', tabTitle: 'In Progress' };
-    }
-    
-    // Check if we recently opened (within 5 seconds)
-    const lastOpen = recentOpens.get(lockKey) || 0;
-    if (Date.now() - lastOpen < 5000) {
-        console.log(`[CDP] 🚫 Recently opened ${domain} for Account ${account} (<5s ago) - skipped`);
-        return { success: true, action: 'skipped', tabTitle: 'Recently Opened' };
-    }
-    
-    // Set lock
-    openingLocks.set(lockKey, true);
-    
-    try {
-        // Check if Chrome is running
-        const isConnected = await connector.isConnected();
-        if (!isConnected) {
-            return {
-                success: false,
-                action: 'failed',
-                error: 'Chrome not running on port 9222. Run LAUNCH_CHROME.bat first.'
-            };
-        }
-
-        // Check if tab with this URL already exists
-        const existingTabs = await connector.findTabsByUrl(url);
-        console.log(`[AUDIT-CONNECTOR] 🔍 Found ${existingTabs.length} existing tabs for ${domain}: ${existingTabs.map(t => t.url).join(', ')}`);
-        
-        if (existingTabs.length > 0) {
-            // Focus existing tab
-            console.log(`[CDP] 📍 Tab for ${domain} already exists, focusing... (NOT opening new!)`);
-            await connector.focusTab(existingTabs[0]);
-            recentOpens.set(lockKey, Date.now()); // Record time
-            return {
-                success: true,
-                action: 'focused',
-                tabTitle: existingTabs[0].title
-            };
-        }
-
-        // Open new tab - ONLY IF NO EXISTING TAB
-        console.log(`[AUDIT-CONNECTOR] 🆕 NO EXISTING TAB - Opening new tab for ${domain}...`);
-        const newTab = await connector.openNewTab(url);
-        
-        if (newTab) {
-            recentOpens.set(lockKey, Date.now()); // Record time
-            return {
-                success: true,
-                action: 'opened',
-                tabTitle: url
-            };
-        }
-
-        return {
-            success: false,
-            action: 'failed',
-            error: 'Failed to open new tab'
-        };
-
-    } catch (error: any) {
-        console.error('[CDP] Error opening URL:', error);
-        return {
-            success: false,
-            action: 'failed',
-            error: error.message || 'Unknown error'
-        };
-    } finally {
-        // Release lock
-        openingLocks.set(lockKey, false);
-    }
-}
-
-/**
- * Focus tab for specific account (for BET button)
- */
-export async function focusAccountTab(urlPattern: string): Promise<{
-    success: boolean;
-    tabTitle?: string;
-    error?: string;
-}> {
-    const connector = getChromeConnector();
-    
-    try {
-        const tabs = await connector.findTabsByUrl(urlPattern);
-        
-        if (tabs.length === 0) {
-            return {
-                success: false,
-                error: `No tab found matching: ${urlPattern}`
-            };
-        }
-
-        await connector.focusTab(tabs[0]);
-        
-        return {
-            success: true,
-            tabTitle: tabs[0].title
-        };
-        
-    } catch (error: any) {
-        return {
-            success: false,
-            error: error.message || 'Failed to focus tab'
-        };
-    }
-}
-
-/**
- * Get Chrome connection status
- */
-export async function checkChromeConnection(): Promise<{
-    connected: boolean;
-    tabs: number;
-    error?: string;
-}> {
-    try {
-        const connector = getChromeConnector();
-        const isConnected = await connector.isConnected();
-        
-        if (!isConnected) {
-            return {
-                connected: false,
-                tabs: 0,
-                error: 'Chrome not reachable on port 9222'
-            };
-        }
-        
-        const tabs = await connector.getTabs();
-        return {
-            connected: true,
-            tabs: tabs.length
-        };
-    } catch (error: any) {
-        return {
-            connected: false,
-            tabs: 0,
-            error: error.message || 'Chrome not reachable on port 9222'
-        };
     }
 }

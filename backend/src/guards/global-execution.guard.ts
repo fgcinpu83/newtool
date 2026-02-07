@@ -62,13 +62,13 @@ export class GlobalExecutionGuard {
             };
         }
 
-        // 2. Check Chrome connection
-        const port = ChromeConnectionManager.getPortForAccount(account);
-        const chromeState = this.chromeManager.getConnectionState(port);
-        const chromeConnected = chromeState?.state === 'CONNECTED' && chromeState?.attached === true;
+        // 2. Check Chrome connection (via manager v3.0 API)
+        const port = ChromeConnectionManager.portFor(account);
+        const chromeState = this.chromeManager.getInfo(port);
+        const chromeConnected = chromeState.state === 'CONNECTED';
 
         if (!chromeConnected) {
-            const reason = `Chrome not connected for account ${account} (state:${chromeState?.state}, attached:${chromeState?.attached})`;
+            const reason = `Chrome not connected for account ${account} (state:${chromeState.state})`;
             this.logger.warn(`[EXECUTION-GUARD] 🚫 BLOCKED: ${reason}`);
             return {
                 allowed: false,
@@ -152,7 +152,7 @@ export class GlobalExecutionGuard {
      */
     getSystemStatus() {
         const providerStates = this.providerManager.getAllProviderStates();
-        const chromeStates = this.chromeManager.getAllConnectionStates();
+        const chromeStates = this.chromeManager.getAllStates();
 
         return {
             providers: providerStates,
