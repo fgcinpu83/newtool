@@ -111,7 +111,7 @@ function liveFeedReducer(state: LiveFeedItem[], action: LiveFeedAction): LiveFee
 // COMPONENT
 // ===============================================
 export default function Page() {
-    const { connected, ready, emit, setOnMessage } = useSystemStatus();
+    const { connected, ready, emit, on, off } = useSystemStatus();
     // const [connected, setConnected] = useState(false); // Moved to context
 
     // Toggle Debounce Lock
@@ -204,136 +204,143 @@ export default function Page() {
     };
 
 
-    // Message handler for socket messages
-    const handleSocketMessage = useCallback((data: any) => {
-        try {
-            if (data.event === 'health:pipeline') {
-                setPipelineHealth(data.data);
-            } else if (data.event === 'provider_status') {
-                try {
-                    const acc = String(data.data.account);
-                    const provider = data.data.provider || 'UNKNOWN';
-                    const status = (data.data.status || '').toString().toLowerCase();
-                    let lampState: 'on'|'warn'|'off' = 'off';
-                    if (status === 'online' || status === 'ok' || status === 'active') lampState = 'on';
-                    else if (status === 'warn' || status === 'degraded' || status === 'slow') lampState = 'warn';
-                    else lampState = 'off';
-
-                    setProviderStatuses(prev => ({
-                        ...prev,
-                        [acc]: {
-                            ...(prev[acc] || {}),
-                            primary: { slotIndex: 0, state: lampState, label: provider }
-                        }
-                    }));
-                } catch (err) { console.warn('provider_status parse error', err); }
-            } else if (data.event === 'system_status') {
-                setSystemStatus({
-                    accountA_active: data.data.accountA_active,
-                    accountB_active: data.data.accountB_active,
-                    balanceA: data.data.balanceA,
-                    balanceB: data.data.balanceB,
-                    profit_session: data.data.profit_session || '0.00',
-                    profit_today: data.data.profit_today || '0.00',
-                    providers: data.data.providers // Ensure providers are also updated
-                });
-                if (data.data.activeEventsA !== undefined) setActiveEventsA(data.data.activeEventsA);
-                if (data.data.activeEventsB !== undefined) setActiveEventsB(data.data.activeEventsB);
-
-                // Pipeline Health Logic
-                if (data.data.providers) {
-                    const a1Live = data.data.providers.A1?.state === 'LIVE';
-                    const b1Live = data.data.providers.B1?.state === 'LIVE';
-                    let newStatus = 'RED', reason = 'WAITING_FOR_DATA';
-                    if (a1Live && b1Live) { newStatus = 'GREEN'; reason = 'BOTH_PROVIDERS_LIVE'; setScannerError(null); }
-                    else if (a1Live || b1Live) {
-                        newStatus = 'YELLOW';
-                        reason = a1Live ? 'WAITING_FOR_B' : 'WAITING_FOR_A';
-                        setScannerError({
-                            type: a1Live ? 'ACCOUNT_B_OFFLINE' : 'ACCOUNT_A_OFFLINE',
-                            message: a1Live ? 'Account B is offline.' : 'Account A is offline.',
-                            timestamp: Date.now()
-                        });
+    // Register socket event listeners
+    useEffect(() => {
+        on('health:pipeline', (data) => setPipelineHealth(data));
+        on('provider_status', (data) => {
+            try {
+                const acc = String(data.account);
+                const provider = data.provider || 'UNKNOWN';
+                const status = (data.status || '').toString().toLowerCase();
+                let lampState: 'on'|'warn'|'off' = 'off';
+                if (status === 'online' || status === 'ok' || status === 'active') lampState = 'on';
+                else if (status === 'warn' || status === 'degraded' || status === 'slow') lampState = 'warn';
+                setProviderStatuses(prev => ({
+                    ...prev,
+                    [acc]: {
+                        ...(prev[acc] || {}),
+                        primary: { slotIndex: 0, state: lampState, label: provider }
                     }
-                    setPipelineHealth(prev => ({ ...prev, status: newStatus, reason: reason }));
-                }
-            } else if (data.event === 'live_feed') {
-                dispatchLiveFeed({ type: 'ADD_ITEMS', items: [data.data] });
-            } else if (data.event === 'active_events') {
-                if (data.data.A !== undefined) setActiveEventsA(data.data.A);
-                if (data.data.B !== undefined) setActiveEventsB(data.data.B);
-            } else if (data.event === 'execution_history') {
-                setExecutionHistory(data.data);
-                playSound('success');
-            } else if (data.event === 'metrics:oipm') {
-                setOipm(data.data);
-            } else if (data.event === 'status:guardian' || data.event === 'guardian:status') {
-                setGuardianStatus(data.data);
-            } else if (data.event === 'chrome:status') {
-                setChromeStatus(data.data);
-                if (!data.data.connected) {
-                    addLog('⚠️ Chrome not detected on port 9222. Run LAUNCH_CHROME.bat first!');
-                }
-            } else if (data.event === 'browser:opened') {
-                addLog(`✅ Browser ${data.data.action}: ${data.data.url} (Account ${data.data.account})`);
-            } else if (data.event === 'browser:focused') {
-                addLog(`🎯 Focused tab: ${data.data.tabTitle} (Account ${data.data.account})`);
-            } else if (data.event === 'browser:error') {
-                addLog(`❌ Browser error (Account ${data.data.account}): ${data.data.error}`);
-            } else if (data.event === 'scanner:update_batch') {
-                setScannerError(null);
-
-                // 🕵️ TRACE_AUDIT INJECTION
-                if (data.data && data.data.length > 0) {
-                    console.log('[TRACE_AUDIT][LEVEL:FRONTEND] Socket Received (Batch):', {
-                        first_match_id: data.data[0].eventId,
-                        batch_size: data.data.length,
-                        latency: Date.now() - (data.data[0].lastUpdate || Date.now())
+                }));
+            } catch (err) { console.warn('provider_status parse error', err); }
+        });
+        on('system_status', (data) => {
+            setSystemStatus({
+                accountA_active: data.accountA_active,
+                accountB_active: data.accountB_active,
+                balanceA: data.balanceA,
+                balanceB: data.balanceB,
+                profit_session: data.profit_session || '0.00',
+                profit_today: data.profit_today || '0.00',
+                providers: data.providers
+            });
+            if (data.activeEventsA !== undefined) setActiveEventsA(data.activeEventsA);
+            if (data.activeEventsB !== undefined) setActiveEventsB(data.activeEventsB);
+            if (data.providers) {
+                const a1Live = data.providers.A1?.state === 'LIVE';
+                const b1Live = data.providers.B1?.state === 'LIVE';
+                let newStatus = 'RED', reason = 'WAITING_FOR_DATA';
+                if (a1Live && b1Live) { newStatus = 'GREEN'; reason = 'BOTH_PROVIDERS_LIVE'; setScannerError(null); }
+                else if (a1Live || b1Live) {
+                    newStatus = 'YELLOW';
+                    reason = a1Live ? 'WAITING_FOR_B' : 'WAITING_FOR_A';
+                    setScannerError({
+                        type: a1Live ? 'ACCOUNT_B_OFFLINE' : 'ACCOUNT_A_OFFLINE',
+                        message: a1Live ? 'Account B is offline.' : 'Account A is offline.',
+                        timestamp: Date.now()
                     });
                 }
-
-                const newItems = data.data.map((pair: any) => ({
-                    id: pair.pairId, timestamp: pair.lastUpdate,
-                    account: pair.legA?.provider || '-', bookmaker: pair.legA?.bookmaker || '-',
-                    home: pair.legA?.home || pair.legB?.home || '-', away: pair.legA?.away || pair.legB?.away || '-',
-                    market: pair.market, selection: pair.legA?.odds.selection || '-',
-                    line: pair.legA?.odds.line || '-', odds: String(pair.legA?.odds.val || '-'),
-                    decOdds: pair.legA?.odds.val || 0,
-                    accountB: pair.legB?.provider || '-', bookmakerB: pair.legB?.bookmaker || '-',
-                    selectionB: pair.legB?.odds.selection || '-', marketB: pair.market,
-                    lineB: pair.legB?.odds.line || '-', oddsB: String(pair.legB?.odds.val || '-'),
-                    decOddsB: pair.legB?.odds.val || 0, profit: pair.profit, state: pair.state
-                }));
-                updateBuffer.current = [...newItems, ...updateBuffer.current].slice(0, 200);
-            } else if (data.event === 'system_log') {
-                const prefix = data.data.level === 'error' ? '❌' : data.data.level === 'warn' ? '⚠️' : '✅';
-                addLog(`${prefix} ${data.data.message}`);
-            } else if (data.event === 'stress_metrics') {
-                if (data.data.type === 'HEAP') setStressMetrics(prev => ({ ...prev, heap: data.data.value }));
-            } else if (data.event === 'stress_anomaly') {
-                if (data.data.type === 'WS_DROP') setStressMetrics(prev => ({ ...prev, wsDrops: prev.wsDrops + 1 }));
-            } else if (data.event === 'UNKNOWN_PROVIDER_DATA') {
-                setUnknownTraffic(prev => {
-                    // Deduplicate by URL
-                    if (prev.some(t => t.url === data.data.url)) return prev;
-                    return [data.data, ...prev].slice(0, 5); // Keep last 5
+                setPipelineHealth(prev => ({ ...prev, status: newStatus, reason: reason }));
+            }
+        });
+        on('live_feed', (data) => dispatchLiveFeed({ type: 'ADD_ITEMS', items: [data] }));
+        on('active_events', (data) => {
+            if (data.A !== undefined) setActiveEventsA(data.A);
+            if (data.B !== undefined) setActiveEventsB(data.B);
+        });
+        on('execution_history', (data) => {
+            setExecutionHistory(data);
+            playSound('success');
+        });
+        on('metrics:oipm', (data) => setOipm(data));
+        on('status:guardian', (data) => setGuardianStatus(data));
+        on('guardian:status', (data) => setGuardianStatus(data));
+        on('chrome:status', (data) => {
+            setChromeStatus(data);
+            if (!data.connected) {
+                addLog('⚠️ Chrome not detected on port 9222. Run LAUNCH_CHROME.bat first!');
+            }
+        });
+        on('browser:opened', (data) => addLog(`✅ Browser ${data.action}: ${data.url} (Account ${data.account})`));
+        on('browser:focused', (data) => addLog(`🎯 Focused tab: ${data.tabTitle} (Account ${data.account})`));
+        on('browser:error', (data) => addLog(`❌ Browser error (Account ${data.account}): ${data.error}`));
+        on('scanner:update_batch', (data) => {
+            setScannerError(null);
+            if (data && data.length > 0) {
+                console.log('[TRACE_AUDIT][LEVEL:FRONTEND] Socket Received (Batch):', {
+                    first_match_id: data[0].eventId,
+                    batch_size: data.length,
+                    latency: Date.now() - (data[0].lastUpdate || Date.now())
                 });
             }
-        } catch (err) {
-            console.error('Failed to parse WebSocket message:', err);
-        }
-    }, [addLog, playSound]);
+            const newItems = data.map((pair: any) => ({
+                id: pair.pairId, timestamp: pair.lastUpdate,
+                account: pair.legA?.provider || '-', bookmaker: pair.legA?.bookmaker || '-',
+                home: pair.legA?.home || pair.legB?.home || '-', away: pair.legA?.away || pair.legB?.away || '-',
+                market: pair.market, selection: pair.legA?.odds.selection || '-',
+                line: pair.legA?.odds.line || '-', odds: String(pair.legA?.odds.val || '-'),
+                decOdds: pair.legA?.odds.val || 0,
+                accountB: pair.legB?.provider || '-', bookmakerB: pair.legB?.bookmaker || '-',
+                selectionB: pair.legB?.odds.selection || '-', marketB: pair.market,
+                lineB: pair.legB?.odds.line || '-', oddsB: String(pair.legB?.odds.val || '-'),
+                decOddsB: pair.legB?.odds.val || 0, profit: pair.profit, state: pair.state
+            }));
+            updateBuffer.current = [...newItems, ...updateBuffer.current].slice(0, 200);
+        });
+        on('system_log', (data) => {
+            const prefix = data.level === 'error' ? '❌' : data.level === 'warn' ? '⚠️' : '✅';
+            addLog(`${prefix} ${data.message}`);
+        });
+        on('stress_metrics', (data) => {
+            if (data.type === 'HEAP') setStressMetrics(prev => ({ ...prev, heap: data.value }));
+        });
+        on('stress_anomaly', (data) => {
+            if (data.type === 'WS_DROP') setStressMetrics(prev => ({ ...prev, wsDrops: prev.wsDrops + 1 }));
+        });
+        on('UNKNOWN_PROVIDER_DATA', (data) => {
+            setUnknownTraffic(prev => {
+                if (prev.some(t => t.url === data.url)) return prev;
+                return [data, ...prev].slice(0, 5);
+            });
+        });
 
-    // Set message handler
-    useEffect(() => {
-        setOnMessage(handleSocketMessage);
-        return () => setOnMessage(null);
-    }, [setOnMessage, handleSocketMessage]);
+        return () => {
+            // Off all listeners
+            off('health:pipeline');
+            off('provider_status');
+            off('system_status');
+            off('live_feed');
+            off('active_events');
+            off('execution_history');
+            off('metrics:oipm');
+            off('status:guardian');
+            off('guardian:status');
+            off('chrome:status');
+            off('browser:opened');
+            off('browser:focused');
+            off('browser:error');
+            off('scanner:update_batch');
+            off('system_log');
+            off('stress_metrics');
+            off('stress_anomaly');
+            off('UNKNOWN_PROVIDER_DATA');
+        };
+    }, [on, off, addLog, playSound]);
 
     // Emit GET_STATUS when connected
     useEffect(() => {
         if (connected) {
-            emit('type', 'GET_STATUS');
+            emit('command', { type: 'GET_STATUS' });
             addLog('✅ Bridge Connected.');
             console.log('[SOCKET] ✅ Bridge Active');
         }
@@ -342,7 +349,7 @@ export default function Page() {
     // Check Chrome status on load
     useEffect(() => {
         const timer = setTimeout(() => {
-            emit('type', { type: 'command', data: { type: 'CHECK_CHROME' } });
+            emit('command', { type: 'command', data: { type: 'CHECK_CHROME' } });
         }, 2000);
         return () => clearTimeout(timer);
     }, [emit]);
