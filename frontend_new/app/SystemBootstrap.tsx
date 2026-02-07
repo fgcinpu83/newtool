@@ -1,14 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
-import { initSystemStatus } from './lib/systemStatus';
+import { SystemStatusProvider } from './lib/SystemStatusContext';
 
-export default function SystemBootstrap() {
-  useEffect(() => {
-    initSystemStatus(() => {
-      document.body.setAttribute('data-system', 'ready');
-    });
-  }, []);
-
-  return null;
+export default function SystemBootstrap({ children }: { children: React.ReactNode }) {
+  return (
+    <SystemStatusProvider>
+      {children}
+    </SystemStatusProvider>
+  );
 }

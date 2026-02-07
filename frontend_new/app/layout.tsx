@@ -18,8 +18,9 @@ export default function RootLayout({
     return (
         <html lang="en">
             <body className={inter.className}>
-                <SystemBootstrap />
-                {children}
+                <SystemBootstrap>
+                    {children}
+                </SystemBootstrap>
             </body>
         </html>
     )

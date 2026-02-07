@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useReducer, useCallback, useRef } from 'react';
 import { TableVirtuoso } from 'react-virtuoso';
+import { useSystemStatus } from './lib/SystemStatusContext';
 
 // ===============================================
 // TYPES
@@ -111,6 +112,7 @@ function liveFeedReducer(state: LiveFeedItem[], action: LiveFeedAction): LiveFee
 // ===============================================
 export default function Page() {
     const [socket, setSocket] = useState<WebSocket | null>(null);
+    const { connected, ready } = useSystemStatus();
 
     const emit = useCallback((eventName: string, payload?: any) => {
         try {
@@ -123,7 +125,7 @@ export default function Page() {
             console.error('[SOCKET] emit error', err);
         }
     }, [socket]);
-    const [connected, setConnected] = useState(false);
+    // const [connected, setConnected] = useState(false); // Moved to context
 
     // Toggle Debounce Lock
     const toggleLock = React.useRef<{ [key: string]: boolean }>({});
@@ -222,7 +224,7 @@ export default function Page() {
         const socket = new WebSocket(SOCKET_URL);
 
         socket.onopen = () => {
-            setConnected(true);
+            // setConnected(true); // Moved to context
             addLog('✅ Bridge Connected.');
             console.log('[SOCKET] ✅ Bridge Active');
             // Request initial status
@@ -230,7 +232,7 @@ export default function Page() {
         };
 
         socket.onclose = () => {
-            setConnected(false);
+            // setConnected(false); // Moved to context
             addLog('🔌 Bridge Disconnected. Retrying...');
         };
 
@@ -507,10 +509,6 @@ export default function Page() {
     // 🔥 v3.5.5 EMERGENCY BYPASS: No filters, just raw data dump
     const filteredFeed = liveFeed.slice(0, 20);
 
-    const systemReady =
-      typeof document !== 'undefined' &&
-      document.body.getAttribute('data-system') === 'ready';
-
     return (
         <div className="bg-[#0f172a] text-slate-200 min-h-screen font-sans selection:bg-blue-500/30">
             <style jsx global>{`
@@ -543,8 +541,8 @@ export default function Page() {
                     </div>
                     
                     <div className="flex items-center gap-2 text-sm text-slate-400">
-                        <span className={`size-2 rounded-full ${(systemReady || connected) ? 'bg-[#22c55e] lamp-active' : 'bg-[#ef4444]'}`}></span>
-                        <span>{systemReady ? 'SYSTEM READY' : connected ? 'System Online' : 'Offline'}</span>
+                        <span className={`size-2 rounded-full ${(ready || connected) ? 'bg-[#22c55e] lamp-active' : 'bg-[#ef4444]'}`}></span>
+                        <span>{ready ? 'SYSTEM READY' : connected ? 'System Online' : 'Offline'}</span>
                     </div>
                     <div className="h-8 w-[1px] bg-[#2a374f]"></div>
                     <div className="flex items-center gap-3">
