@@ -1,22 +1,18 @@
-import { executeArbitrage } from "./executionEngine";
-import { ProviderReadiness } from "./executionGuard";
+/**
+ * Execution Worker v2.0 — CONSTITUTION §III.3 COMPLIANT
+ *
+ * Worker threads CANNOT access NestJS DI (GlobalExecutionGuard).
+ * executeArbitrage() now REQUIRES globalGuard — no bypass.
+ *
+ * This worker is DISABLED: execution must go through the main thread
+ * where GlobalExecutionGuard is available via DI.
+ */
+
 import { parentPort } from 'worker_threads';
 
 if (parentPort) {
-    parentPort.on('message', async (data) => {
-        try {
-            const { opportunities, readiness } = data;
-            const results = [];
-
-            for (const opp of opportunities) {
-                const r = await executeArbitrage(opp, readiness);
-                if (r) results.push(r);
-            }
-
-            parentPort?.postMessage(results);
-        } catch (err) {
-            // console.error(err);
-            parentPort?.postMessage([]);
-        }
+    parentPort.on('message', async () => {
+        console.error('[EXECUTION-WORKER] BLOCKED — Cannot execute outside NestJS DI context (no guard access)');
+        parentPort?.postMessage([]);
     });
 }

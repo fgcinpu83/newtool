@@ -5,6 +5,7 @@ import { AppGateway } from '../gateway.module';
 import { RedisService } from '../shared/redis.service';
 import { WorkerService, ProviderState } from '../workers/worker.service';
 import { ContractRegistry } from '../workers/contract-registry.service';
+import { GlobalExecutionGuard, ExecutionBlockedError } from '../guards/global-execution.guard';
 
 @Injectable()
 export class ArbitrageService {
@@ -17,7 +18,8 @@ export class ArbitrageService {
         @Inject(forwardRef(() => WorkerService))
         private workerService: WorkerService,
         @Inject(forwardRef(() => ContractRegistry))
-        private contractRegistry: ContractRegistry
+        private contractRegistry: ContractRegistry,
+        private executionGuard: GlobalExecutionGuard,
     ) { }
 
     async evaluate(pricesSideA: any, pricesSideB: any) {
@@ -81,29 +83,34 @@ export class ArbitrageService {
         // DISABLED: Frontend now handles pairing from raw feeds
         // this.gateway.sendUpdate('live_feed', payload);
 
-        // Auto-Execution Logic (v3.1 Dual-Green Guard)
+        // Auto-Execution Logic — CONSTITUTION §III.3: GlobalExecutionGuard is SINGLE GATE
         if (profitPercent > parseFloat(config.min || 0)) {
-            const statusA = this.workerService.getProviderStatus(odd1.account, odd1.provider);
-            const statusB = this.workerService.getProviderStatus(odd2.account, odd2.provider);
-
-            // 🛡️ v3.2 SCORE VALIDATION LOCK
+            // Score validation (domain check — stays here)
             const score1 = String(odd1.score || '').trim();
             const score2 = String(odd2.score || '').trim();
 
             if (score1 && score2 && score1 !== score2) {
-                console.log(`[SCORE-LOCK] 🛑 Divergence Blocked: A(${odd1.provider})=${score1} vs B(${odd2.provider})=${score2}`);
+                console.log(`[SCORE-LOCK] BLOCKED: Divergence A(${odd1.provider})=${score1} vs B(${odd2.provider})=${score2}`);
                 return;
             }
 
-            if (statusA === 'LIVE' && statusB === 'LIVE') {
-                // 🛡️ v3.1 LOCKED - Additional guard: require fresh MatchList
-                if (!this.canExecute()) {
-                    return;
+            // Fresh MatchList check (domain check — stays here)
+            if (!this.canExecute()) return;
+
+            // GUARD GATE — THROWS if Chrome/Provider/System not ready
+            try {
+                this.executionGuard.assertExecutable({ account: 'A', providerId: odd1.provider || 'A1' });
+                this.executionGuard.assertExecutable({ account: 'B', providerId: odd2.provider || 'B1' });
+            } catch (err) {
+                if (err instanceof ExecutionBlockedError) {
+                    console.log(`[EXECUTION-GUARD] BLOCKED by guard: ${err.message} (${err.check})`);
+                } else {
+                    console.error(`[EXECUTION-GUARD] Unexpected error:`, err);
                 }
-                this.executeTrade(odd1, odd2, profitPercent, config);
-            } else {
-                console.log(`[EXECUTION-GUARD] 🛡️ Blocked: Dual-Green required. A(${odd1.provider})=${statusA}, B(${odd2.provider})=${statusB}`);
+                return;
             }
+
+            this.executeTrade(odd1, odd2, profitPercent, config);
         }
     }
 

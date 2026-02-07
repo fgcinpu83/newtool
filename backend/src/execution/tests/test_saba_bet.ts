@@ -2,11 +2,12 @@ import { SabaExecutionService } from '../saba-execution.service';
 import { ContractRegistry } from '../../workers/contract-registry.service';
 
 /**
- * MOCK TEST SCRIPT
+ * MOCK TEST SCRIPT — Updated for ExecutionGuard v2.0
+ * processBet() is now private. Test via safePlaceBet().
  * Run with: npx ts-node src/execution/tests/test_saba_bet.ts
  */
 async function runTest() {
-    console.log('--- SABA PROCESS_BET TEST ---');
+    console.log('--- SABA SAFE_PLACE_BET TEST ---');
 
     // 1. Mock Registry
     const mockRegistry = {
@@ -26,7 +27,7 @@ async function runTest() {
         }
     } as any;
 
-    // 2. Initialize Service
+    // 2. Mock Redis
     const mockRedis = {
         get: async (k: string) => {
             if (k === 'sinfo_B') return 'MOCK_SINFO_FROM_REDIS';
@@ -34,29 +35,30 @@ async function runTest() {
         }
     } as any;
 
-    const sabaService = new SabaExecutionService(mockRegistry, mockRedis);
+    // 3. Mock GlobalExecutionGuard (always allows)
+    const mockGuard = {
+        assertExecutable: () => { /* no-op = allow */ },
+    } as any;
 
-    // 3. Mock Bet Details
+    const sabaService = new SabaExecutionService(mockRegistry, mockRedis, mockGuard);
+
+    // 4. Mock Bet Details
     const betDetails = {
         Matchid: '119918411',
         Oddsid: '293821',
         Odds: '0.95',
         Stake: 100,
-        // sinfo omitted to test registry fallback
         AcceptBetterOdds: false
     };
 
-    console.log('📦 Testing with payload:', betDetails);
+    console.log('Testing with payload:', betDetails);
 
     try {
-        // We catch the error because it will try to hit a real (but fake) URL
-        // or we can mock axios if we want a pure local test.
-        // For this demo, let's just see if it constructs the request correctly.
-        const result = await sabaService.processBet(betDetails);
-        console.log('✅ Result:', result);
+        const result = await sabaService.safePlaceBet(betDetails);
+        console.log('Result:', result);
     } catch (e) {
-        console.log('❌ Expected hit failure (since URL is fake), but check if logs show correct formatting:');
-        // console.error(e.message);
+        console.log('Expected failure (fake URL), check log formatting:');
+        console.error(e.message);
     }
 }
 

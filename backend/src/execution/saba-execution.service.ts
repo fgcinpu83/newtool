@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as qs from 'qs';
 import { ContractRegistry } from '../workers/contract-registry.service';
 import { RedisService } from '../shared/redis.service';
+import { GlobalExecutionGuard, ExecutionBlockedError } from '../guards/global-execution.guard';
 
 // 🛡️ v6.0 BETTING SAFETY GUARD - Slip Status Types
 export interface SlipStatus {
@@ -28,7 +29,11 @@ export class SabaExecutionService {
     // 🛡️ v6.0 BETTING SAFETY GUARD - Default odds tolerance
     private readonly DEFAULT_ODDS_TOLERANCE = 0.00; // No tolerance by default - exact match required
 
-    constructor(private readonly registry: ContractRegistry, private readonly redisService: RedisService) { }
+    constructor(
+        private readonly registry: ContractRegistry,
+        private readonly redisService: RedisService,
+        private readonly executionGuard: GlobalExecutionGuard,
+    ) { }
 
     /**
      * 🛡️ v6.0 BETTING SAFETY GUARD - Check Slip Status
@@ -146,8 +151,12 @@ export class SabaExecutionService {
     }
 
     /**
-     * 🛡️ v6.0 Safe Bet Execution with Pre-Verification
-     * Wraps processBet with mandatory slip status check
+     * v2.0 Safe Bet Execution — CONSTITUTION §III.3 COMPLIANT
+     *
+     * SINGLE public entry point for SABA bet placement.
+     * 1. Guard assertExecutable() — THROWS if blocked
+     * 2. Slip verification (odds check)
+     * 3. processBet() (now private)
      */
     async safePlaceBet(details: {
         Matchid: string | number;
@@ -157,7 +166,10 @@ export class SabaExecutionService {
         sinfo?: string;
         AcceptBetterOdds?: boolean;
     }): Promise<any> {
-        // STEP 1: MANDATORY - Check slip status before placing bet
+        // STEP 0: GUARD — THROWS ExecutionBlockedError if system not ready
+        this.executionGuard.assertExecutable({ account: 'B', providerId: 'B:ISPORT' });
+
+        // STEP 1: MANDATORY — Check slip status before placing bet
         const slipStatus = await this.checkSlipStatus({
             matchId: details.Matchid,
             oddsId: details.Oddsid,
@@ -179,9 +191,10 @@ export class SabaExecutionService {
     }
 
     /**
-     * Sends a bet request to Saba (ISPORT) using x-www-form-urlencoded
+     * PRIVATE — Sends a bet request to Saba (ISPORT) using x-www-form-urlencoded.
+     * Must only be called through safePlaceBet() which enforces the guard.
      */
-    async processBet(details: {
+    private async processBet(details: {
         Matchid: string | number;
         Oddsid: string | number;
         Odds: number | string;

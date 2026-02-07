@@ -1,29 +1,39 @@
 /**
- * Global Execution Guard v1.0 - SAFETY LOCK
+ * Global Execution Guard v2.0 — CONSTITUTION §III.3 COMPLIANT
  *
- * Central guard for all betting executions
- * Ensures system is in valid state before allowing bets
+ * SINGLE GATE for ALL betting execution.
+ * assertExecutable() THROWS on failure — no boolean return.
+ *
+ * Checks (in order):
+ *   1. Provider state === READY
+ *   2. Chrome  state === CONNECTED
+ *   3. System  state === READY (both accounts have READY providers)
+ *
+ * Jika salah satu gagal → THROW ExecutionBlockedError.
+ * Tidak ada bypass.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ProviderSessionManager } from '../managers/provider-session.manager';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 
+// ─── Minimal context — guard does NOT validate stake/odds (executor concern) ───
 export interface ExecutionContext {
     account: 'A' | 'B';
     providerId: string;
-    stake: number;
-    odds: number;
 }
 
-export interface ExecutionResult {
-    allowed: boolean;
-    reason: string;
-    context?: {
-        providerReady: boolean;
-        chromeConnected: boolean;
-        systemReady: boolean;
-    };
+// ─── Custom error thrown on ANY guard failure ──────────────────────────────────
+export class ExecutionBlockedError extends Error {
+    public readonly check: 'PROVIDER' | 'CHROME' | 'SYSTEM';
+    public readonly detail: Record<string, unknown>;
+
+    constructor(check: 'PROVIDER' | 'CHROME' | 'SYSTEM', reason: string, detail: Record<string, unknown> = {}) {
+        super(reason);
+        this.name = 'ExecutionBlockedError';
+        this.check = check;
+        this.detail = detail;
+    }
 }
 
 @Injectable()
@@ -32,132 +42,67 @@ export class GlobalExecutionGuard {
 
     constructor(
         private providerManager: ProviderSessionManager,
-        private chromeManager: ChromeConnectionManager
+        private chromeManager: ChromeConnectionManager,
     ) {}
 
     /**
-     * Main execution guard - called before ANY bet execution
-     * SAFETY LOCK: Ensures all conditions are met before allowing execution
+     * SINGLE GATE — called before ANY bet execution.
+     * Returns void on success.  THROWS ExecutionBlockedError on failure.
      */
-    async assertExecutable(context: ExecutionContext): Promise<ExecutionResult> {
-        const { account, providerId, stake, odds } = context;
+    assertExecutable(context: ExecutionContext): void {
+        const { account, providerId } = context;
 
-        this.logger.log(`[EXECUTION-GUARD] 🔍 Checking execution for ${account}:${providerId} stake:${stake} odds:${odds}`);
+        this.logger.log(`[GUARD] Checking ${account}:${providerId}`);
 
-        // 1. Check provider readiness (via manager v2.0 — state machine)
+        // 1. Provider must be READY
         const providerState = this.providerManager.getProviderState(providerId);
-        const providerReady = providerState?.state === 'READY';
-
-        if (!providerReady) {
-            const reason = `Provider ${providerId} not ready (state:${providerState?.state})`;
-            this.logger.warn(`[EXECUTION-GUARD] 🚫 BLOCKED: ${reason}`);
-            return {
-                allowed: false,
-                reason,
-                context: {
-                    providerReady: false,
-                    chromeConnected: false,
-                    systemReady: false
-                }
-            };
+        if (!providerState || providerState.state !== 'READY') {
+            const reason = `Provider ${providerId} not READY (state: ${providerState?.state ?? 'UNKNOWN'})`;
+            this.logger.warn(`[GUARD] BLOCKED — ${reason}`);
+            throw new ExecutionBlockedError('PROVIDER', reason, {
+                providerId,
+                currentState: providerState?.state ?? 'UNKNOWN',
+            });
         }
 
-        // 2. Check Chrome connection (via manager v3.0 API)
+        // 2. Chrome must be CONNECTED for this account
         const port = ChromeConnectionManager.portFor(account);
-        const chromeState = this.chromeManager.getInfo(port);
-        const chromeConnected = chromeState.state === 'CONNECTED';
-
-        if (!chromeConnected) {
-            const reason = `Chrome not connected for account ${account} (state:${chromeState.state})`;
-            this.logger.warn(`[EXECUTION-GUARD] 🚫 BLOCKED: ${reason}`);
-            return {
-                allowed: false,
-                reason,
-                context: {
-                    providerReady: true,
-                    chromeConnected: false,
-                    systemReady: false
-                }
-            };
+        const chromeInfo = this.chromeManager.getInfo(port);
+        if (chromeInfo.state !== 'CONNECTED') {
+            const reason = `Chrome not CONNECTED for account ${account} (state: ${chromeInfo.state})`;
+            this.logger.warn(`[GUARD] BLOCKED — ${reason}`);
+            throw new ExecutionBlockedError('CHROME', reason, {
+                account,
+                port,
+                currentState: chromeInfo.state,
+            });
         }
 
-        // 3. Check system readiness
-        const systemReady = this.providerManager.isSystemReady();
-
-        if (!systemReady) {
-            const reason = `System not ready - both accounts must have providers`;
-            this.logger.warn(`[EXECUTION-GUARD] 🚫 BLOCKED: ${reason}`);
-            return {
-                allowed: false,
-                reason,
-                context: {
-                    providerReady: true,
-                    chromeConnected: true,
-                    systemReady: false
-                }
-            };
+        // 3. System must be READY (both accounts have READY providers)
+        if (!this.providerManager.isSystemReady()) {
+            const reason = 'System not READY — both accounts must have READY providers';
+            this.logger.warn(`[GUARD] BLOCKED — ${reason}`);
+            throw new ExecutionBlockedError('SYSTEM', reason, {
+                systemStatus: this.providerManager.getSystemStatus(),
+            });
         }
 
-        // 4. Validate stake (basic sanity check)
-        if (stake <= 0 || stake > 10000) {
-            const reason = `Invalid stake amount: ${stake}`;
-            this.logger.warn(`[EXECUTION-GUARD] 🚫 BLOCKED: ${reason}`);
-            return {
-                allowed: false,
-                reason,
-                context: {
-                    providerReady: true,
-                    chromeConnected: true,
-                    systemReady: true
-                }
-            };
-        }
-
-        // 5. Validate odds (basic sanity check)
-        if (odds < 1.01 || odds > 100) {
-            const reason = `Invalid odds: ${odds}`;
-            this.logger.warn(`[EXECUTION-GUARD] 🚫 BLOCKED: ${reason}`);
-            return {
-                allowed: false,
-                reason,
-                context: {
-                    providerReady: true,
-                    chromeConnected: true,
-                    systemReady: true
-                }
-            };
-        }
-
-        this.logger.log(`[EXECUTION-GUARD] ✅ ALLOWED: All checks passed for ${account}:${providerId}`);
-        return {
-            allowed: true,
-            reason: 'All safety checks passed',
-            context: {
-                providerReady: true,
-                chromeConnected: true,
-                systemReady: true
-            }
-        };
+        this.logger.log(`[GUARD] ALLOWED ${account}:${providerId}`);
     }
 
-    /**
-     * Quick check for system readiness (for UI status)
-     */
+    // ─── Read-only helpers (for UI / gateway status) ────────────────────────
+
+    /** Quick boolean for dashboard readiness indicator */
     isSystemReady(): boolean {
         return this.providerManager.isSystemReady();
     }
 
-    /**
-     * Get detailed system status
-     */
+    /** Detailed snapshot for status endpoints */
     getSystemStatus() {
-        const providerStates = this.providerManager.getAllProviderStates();
-        const chromeStates = this.chromeManager.getAllStates();
-
         return {
-            providers: providerStates,
-            chrome: chromeStates,
-            systemReady: this.isSystemReady()
+            providers: this.providerManager.getAllProviderStates(),
+            chrome: this.chromeManager.getAllStates(),
+            systemReady: this.isSystemReady(),
         };
     }
 }
