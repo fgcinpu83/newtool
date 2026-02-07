@@ -1,4 +1,4 @@
-# ARBITRAGE SYSTEM MASTER CONTEXT: E:NEW TOOLS
+# ARBITRAGE SYSTEM MASTER CONTEXT: E:NEWTOOL
 > ARCHITECTURE: Desktop Browser Edition v3.1
 > STATUS: CRITICAL - DO NOT DELETE
 
@@ -89,7 +89,7 @@ The system previously generated "synthetic" IDs (random UUIDs or provider_rawID 
 **Status:** APPROVED / IMPLEMENTED
 
 **Context:**
-Integrasi multi-provider (AFB88, ISPORT) dalam `E:\new tools` memiliki risiko tinggi *session cross-contamination* dan *race condition* saat eksekusi arbitrase.
+Integrasi multi-provider (AFB88, ISPORT) dalam `E:\newtool` memiliki risiko tinggi *session cross-contamination* dan *race condition* saat eksekusi arbitrase.
 
 **Decision:**
 1.  **Strict Adapter Pattern:** Setiap provider (ISPORT/AFB88) wajib memiliki *Class Adapter* terisolasi yang mewarisi `BaseProvider`. Dilarang keras menaruh logika provider langsung di *Main Loop*.

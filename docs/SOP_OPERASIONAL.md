@@ -61,7 +61,7 @@
 │  2️⃣  Ketik: chrome://extensions                             │
 │  3️⃣  Aktifkan "Developer mode"                             │
 │  4️⃣  Klik "Load unpacked"                                  │
-│  5️⃣  Pilih folder: e:\new tools\extension_desktop          │
+│  5️⃣  Pilih folder: e:\newtool\extension_desktop          │
 │  6️⃣  Pastikan status: "Connected to Backend"               │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -110,7 +110,7 @@
 ## 📁 STRUKTUR FILE
 
 ```
-e:\new tools\
+e:\newtool\
 ├── START_SYSTEM.bat          # Startup harian
 ├── extension_desktop\        # Chrome extension
 │   ├── manifest.json

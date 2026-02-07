@@ -34,7 +34,7 @@ setSystemStatus(prev => {
 });
 ```
 
-**File:** `e:\new tools\frontend\app\page.tsx` (line 171-220)
+**File:** `e:\newtool\frontend\app\page.tsx` (line 171-220)
 
 ---
 
@@ -112,7 +112,7 @@ Current matching logic is too strict and doesn't normalize these differences.
 **File:** `e:\new tools\frontend\app\page.tsx`  
 **Location:** Line 117-182 (inside `newSocket.on('live_feed')` listener)
 
-**Action:** Replace the current pairing logic with the improved version from `e:\new tools\PAIRING_FIX.js`
+**Action:** Replace the current pairing logic with the improved version from `e:\newtool\PAIRING_FIX.js`
 
 **Improved Normalization:**
 ```typescript
@@ -140,8 +140,8 @@ const homeMatch = itemHome.includes(incomingHome) ||
 ## 📋 STEP-BY-STEP FIX INSTRUCTIONS
 
 1. **Open Files:**
-   - `e:\new tools\PAIRING_FIX.js` (reference)
-   - `e:\new tools\frontend\app\page.tsx` (target)
+   - `e:\newtool\PAIRING_FIX.js` (reference)
+   - `e:\newtool\frontend\app\page.tsx` (target)
 
 2. **Locate Code:**
    - Go to line 117 in `page.tsx`

@@ -61,7 +61,7 @@ adb -s emulator-5554 shell settings delete global global_http_proxy_port
 
 ### STEP 4: Buat Script Startup
 
-Buat file `START_SYSTEM.bat` di `e:\new tools\`:
+Buat file `START_SYSTEM.bat` di `e:\newtool\`:
 
 ```batch
 @echo off
@@ -83,7 +83,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo [3/4] Starting Backend...
-start "Backend" cmd /c "cd /d e:\new tools\backend && node dist\src\main.js"
+start "Backend" cmd /c "cd /d e:\newtool\backend && node dist\src\main.js"
 timeout /t 5 > nul
 
 echo [4/4] Starting Frontend...
@@ -176,7 +176,7 @@ adb -s emulator-5554 reverse --list
 
 **Solusi:**
 ```powershell
-cd e:\new tools\backend
+cd e:\newtool\backend
 node dist\src\main.js
 ```
 

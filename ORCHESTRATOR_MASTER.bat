@@ -22,8 +22,8 @@ REM Launch Chrome Remote Debugging
 echo [4/5] Launching Chrome with remote debugging...
 start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" ^
  --remote-debugging-port=9222 ^
- --user-data-dir="E:\new tools\chrome-profile" ^
- --load-extension="E:\new tools\extension_desktop"
+ --user-data-dir="E:\newtool\chrome-profile" ^
+ --load-extension="E:\newtool\extension_desktop"
 
 echo ================================
 echo   SYSTEM FULLY STARTED

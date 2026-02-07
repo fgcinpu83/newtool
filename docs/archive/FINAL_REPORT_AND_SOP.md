@@ -21,7 +21,7 @@ The system now runs on a robust, production-grade 3-layer architecture:
 2.  Wait for the Home Screen.
 
 ### B. SYSTEM LAUNCH
-1.  Run **`e:\new tools\START_SYSTEM.bat`**.
+1.  Run **`e:\newtool\START_SYSTEM.bat`**.
 2.  The script will automatically:
     *   Detect MuMu Player on port 7555.
     *   Establish the Data Tunnel (Reverse 3001).
@@ -46,7 +46,7 @@ The system now runs on a robust, production-grade 3-layer architecture:
 ## 4. TROUBLESHOOTING
 
 -   **"Backend Not Connected"**:
-    run `e:\new tools\CONNECT_MUMU.bat` to reset ADB, then restart `START_SYSTEM.bat`.
+    run `e:\newtool\CONNECT_MUMU.bat` to reset ADB, then restart `START_SYSTEM.bat`.
 
 -   **"Browser Crash"**:
     Ensure MuMu Settings -> Graphics -> **DirectX** is selected.

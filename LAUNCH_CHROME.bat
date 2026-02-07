@@ -17,7 +17,7 @@ REM set CHROME_PATH="C:\Program Files (x86)\Google\Chrome\Application\chrome.exe
 REM set CHROME_PATH="%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
 
 REM User data directory (separate profile for arbitrage)
-set USER_DATA="E:\new tools\chrome_profile"
+set USER_DATA="E:\newtool\chrome_profile"
 
 REM Remote debugging port
 set DEBUG_PORT=9222

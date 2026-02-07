@@ -132,7 +132,7 @@ Backend → Frontend Messages:
 
 ### Step 1: Launch Chrome with Debugging
 ```bash
-cd "e:\new tools"
+cd "e:\newtool"
 .\LAUNCH_CHROME.bat
 ```
 
@@ -198,7 +198,7 @@ netstat -ano | findstr :3001
 taskkill /PID <PID> /F
 
 # Restart backend
-cd "e:\new tools\backend"
+cd "e:\newtool\backend"
 npx ts-node src/main.ts
 ```
 
