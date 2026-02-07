@@ -2,11 +2,11 @@
 
 import { initSocket } from './socket';
 
-let systemDY = false;
+let initialized = false;
 
 export function initSystemStatus(onReady: () => void) {
-  if (Rdy) return;
-  Rdy = true;
+  if (initialized) return;
+  initialized = true;
 
   const socket = initSocket();
 

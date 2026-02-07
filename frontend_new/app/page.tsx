@@ -507,6 +507,10 @@ export default function Page() {
     // 🔥 v3.5.5 EMERGENCY BYPASS: No filters, just raw data dump
     const filteredFeed = liveFeed.slice(0, 20);
 
+    const systemReady =
+      typeof document !== 'undefined' &&
+      document.body.getAttribute('data-system') === 'ready';
+
     return (
         <div className="bg-[#0f172a] text-slate-200 min-h-screen font-sans selection:bg-blue-500/30">
             <style jsx global>{`
@@ -539,8 +543,8 @@ export default function Page() {
                     </div>
                     
                     <div className="flex items-center gap-2 text-sm text-slate-400">
-                        <span className={`size-2 rounded-full ${connected ? 'bg-[#22c55e] lamp-active' : 'bg-[#ef4444]'}`}></span>
-                        <span>{connected ? 'System Online' : 'Offline'}</span>
+                        <span className={`size-2 rounded-full ${(systemReady || connected) ? 'bg-[#22c55e] lamp-active' : 'bg-[#ef4444]'}`}></span>
+                        <span>{systemReady ? 'SYSTEM READY' : connected ? 'System Online' : 'Offline'}</span>
                     </div>
                     <div className="h-8 w-[1px] bg-[#2a374f]"></div>
                     <div className="flex items-center gap-3">

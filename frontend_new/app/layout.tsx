@@ -1,9 +1,7 @@
-'use client';
-
 import './globals.css'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import { initSystemStatus } from './lib/systemStatus'
+import SystemBootstrap from './SystemBootstrap'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -17,16 +15,12 @@ export default function RootLayout({
 }: {
     children: React.ReactNode
 }) {
-    initSystemStatus(() => {
-        document.body.setAttribute('data-system', 'ready');
-    });
-
     return (
-        <html lang="en" className="dark">
-            <head>
-                <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-            </head>
-            <body className={inter.className}>{children}</body>
+        <html lang="en">
+            <body className={inter.className}>
+                <SystemBootstrap />
+                {children}
+            </body>
         </html>
     )
 }
