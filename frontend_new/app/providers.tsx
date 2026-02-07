@@ -1,6 +1,6 @@
 'use client';
 
-import { SystemStatusProvider } from './lib/SystemStatusContext';
+import { SystemStatusProvider } from './lib/SystemStatusProvider';
 
 export default function SystemBootstrap({ children }: { children: React.ReactNode }) {
   return (
