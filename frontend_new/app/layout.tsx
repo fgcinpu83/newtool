@@ -1,6 +1,9 @@
+'use client';
+
 import './globals.css'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { initSystemStatus } from './lib/systemStatus'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -14,6 +17,10 @@ export default function RootLayout({
 }: {
     children: React.ReactNode
 }) {
+    initSystemStatus(() => {
+        document.body.setAttribute('data-system', 'ready');
+    });
+
     return (
         <html lang="en" className="dark">
             <head>

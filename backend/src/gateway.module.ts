@@ -24,6 +24,13 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
     onModuleInit() {
         console.log('Gateway initialized');
+        setTimeout(() => {
+            console.log('[SYSTEM] BACKEND READY');
+            this.server.emit('system:ready', {
+                status: 'ready',
+                ts: Date.now(),
+            });
+        }, 500);
     }
 
     async onApplicationBootstrap() {
