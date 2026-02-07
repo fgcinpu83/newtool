@@ -1,20 +1,20 @@
 /**
- * ChromeModule - CONSTITUTION COMPLIANT
+ * ChromeModule v2.0 — CONSTITUTION §III.1 + STEP 3.1
  *
- * SYSTEM CONSTITUTION §III.1:
- * - ChromeConnectionManager is the SINGLE source of truth for Chrome
+ * - ChromeConnectionManager: SINGLE source of truth for Chrome state
+ * - ChromeLauncher: SINGLE way to spawn Chrome processes
  * - @Global() ensures ONE instance across the entire app (singleton)
- * - All modules that need Chrome access import this module
  */
 
 import { Global, Module } from '@nestjs/common';
 import { ChromeController } from './chrome.controller';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
+import { ChromeLauncher } from './chrome-launcher.service';
 
 @Global()
 @Module({
     controllers: [ChromeController],
-    providers: [ChromeConnectionManager],
-    exports: [ChromeConnectionManager],
+    providers: [ChromeLauncher, ChromeConnectionManager],
+    exports: [ChromeLauncher, ChromeConnectionManager],
 })
 export class ChromeModule {}

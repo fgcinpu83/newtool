@@ -1,5 +1,5 @@
 /**
- * ChromeConnectionManager v3.0 - CONSTITUTION COMPLIANT
+ * ChromeConnectionManager v3.1 - CONSTITUTION COMPLIANT
  *
  * SYSTEM CONSTITUTION §III.1:
  * - Satu-satunya pintu Chrome
@@ -8,13 +8,18 @@
  * - Tidak boleh attach jika CONNECTING/CONNECTED
  * - Semua file chrome dilarang buat koneksi sendiri
  *
+ * v3.1: attach() now calls ChromeLauncher.ensureRunning() BEFORE
+ *       probing CDP — Chrome is started automatically if not running.
+ *
  * INVARIANTS:
  * 1. State NEVER goes backwards without explicit detach()
  * 2. Only ONE attach per port at any time
  * 3. All Chrome HTTP/WS access MUST go through this manager
+ * 4. ChromeLauncher is the ONLY way Chrome processes are spawned
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { ChromeLauncher } from '../chrome/chrome-launcher.service';
 
 // ─── State Machine ───────────────────────────────────
 export type ChromeConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR';
@@ -44,7 +49,10 @@ export class ChromeConnectionManager {
     // One entry per account port
     private readonly ports: Map<number, ChromeConnectionInfo> = new Map();
 
-    constructor() {
+    constructor(
+        @Inject(forwardRef(() => ChromeLauncher))
+        private readonly launcher: ChromeLauncher,
+    ) {
         for (const port of [9222, 9223]) {
             this.ports.set(port, {
                 port,
@@ -53,7 +61,7 @@ export class ChromeConnectionManager {
                 lastChecked: 0,
             });
         }
-        this.logger.log('ChromeConnectionManager v3.0 initialized (ports 9222, 9223)');
+        this.logger.log('ChromeConnectionManager v3.1 initialized (ports 9222, 9223)');
     }
 
     // ─── STATE MACHINE CORE ─────────────────────────
@@ -101,6 +109,12 @@ export class ChromeConnectionManager {
         this.transition(port, 'CONNECTING');
 
         try {
+            // STEP 3.1: Ensure Chrome process is running before probing CDP
+            const launchResult = await this.launcher.ensureRunning(port);
+            if (!launchResult.launched && !launchResult.reused) {
+                throw new Error(`Chrome launch failed: ${launchResult.message}`);
+            }
+
             const response = await fetch(`http://localhost:${port}/json/version`, {
                 signal: AbortSignal.timeout(3000),
             });

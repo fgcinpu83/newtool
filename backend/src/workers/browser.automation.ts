@@ -11,12 +11,9 @@
  */
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { exec } from 'child_process';
 import { AppGateway } from '../gateway.module';
 import { RedisService } from '../shared/redis.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
-import * as fs from 'fs';
-import * as path from 'path';
 
 @Injectable()
 export class BrowserAutomationService implements OnModuleInit {
@@ -112,11 +109,7 @@ export class BrowserAutomationService implements OnModuleInit {
         } else {
             this.logger.error(`Failed: ${result.error}`);
             this.gateway.sendUpdate('browser:error', { account, error: result.error });
-
-            // Fallback OS launch if Chrome not running
-            if (result.error?.includes('DISCONNECTED') || result.error?.includes('not running')) {
-                await this.fallbackOSLaunch(account, url);
-            }
+            // ChromeLauncher.ensureRunning() is called inside attach() — no fallback needed
         }
     }
 
@@ -207,39 +200,5 @@ export class BrowserAutomationService implements OnModuleInit {
         this.logger.log(`Closing tabs for Account ${account}`);
         this.gateway.sendUpdate('browser:close', { account });
         this.gateway.sendUpdate('browser:closed', { account, timestamp: Date.now() });
-    }
-
-    // ─── FALLBACK OS LAUNCH ─────────────────────────
-
-    private async fallbackOSLaunch(account: string, url: string) {
-        const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-        const CHROME_PATH_X86 = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe";
-        const chromeExe = fs.existsSync(CHROME_PATH) ? CHROME_PATH : (fs.existsSync(CHROME_PATH_X86) ? CHROME_PATH_X86 : null);
-
-        if (!chromeExe) {
-            this.logger.error(`[FALLBACK] Chrome.exe not found`);
-            return;
-        }
-
-        const rootDir = path.join(process.cwd(), '..');
-        const extPath = path.join(rootDir, 'extension_desktop');
-        const userData = path.join(rootDir, 'chrome_profile');
-
-        let fullUrl = url.startsWith('http') ? url : `https://${url}`;
-        const cmd = `"${chromeExe}" --remote-debugging-port=9222 --user-data-dir="${userData}" --load-extension="${extPath}" --no-first-run "${fullUrl}"`;
-
-        this.logger.log(`[FALLBACK] Launching Chrome...`);
-        exec(cmd, (error) => {
-            if (error) {
-                this.logger.error(`[FALLBACK] Launch failed: ${error.message}`);
-            } else {
-                this.logger.log(`[FALLBACK] Chrome launched successfully`);
-                this.gateway.sendUpdate('browser:opened', {
-                    account, url: fullUrl,
-                    action: 'fallback_launched',
-                    timestamp: Date.now(),
-                });
-            }
-        });
     }
 }
