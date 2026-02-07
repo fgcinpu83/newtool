@@ -5,9 +5,10 @@ import { betOnA } from "./betExecutorA";
 import { betOnB } from "./betExecutorB";
 import { ArbitrageOpportunity } from "../arbitrage/schemas";
 import { ExecutionResult } from "./schemas";
+import { GlobalExecutionGuard } from "../guards/global-execution.guard";
 
-export async function executeArbitrage(opp: ArbitrageOpportunity, readiness?: ProviderReadiness): Promise<ExecutionResult | null> {
-    if (!validateExecution(opp, readiness)) return null;
+export async function executeArbitrage(opp: ArbitrageOpportunity, readiness?: ProviderReadiness, globalGuard?: GlobalExecutionGuard): Promise<ExecutionResult | null> {
+    if (!(await validateExecution(opp, readiness, globalGuard))) return null;
 
     // Enforce 60s global cooldown
     await enforceCooldown(60000);

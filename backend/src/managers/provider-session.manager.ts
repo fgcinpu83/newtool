@@ -81,6 +81,13 @@ export class ProviderSessionManager {
     }
 
     /**
+     * Get all provider states
+     */
+    getAllProviderStates(): Record<string, ProviderSessionState> {
+        return Object.fromEntries(this.sessionStates);
+    }
+
+    /**
      * Check if account has any ready providers
      */
     isAccountReady(account: 'A' | 'B'): boolean {

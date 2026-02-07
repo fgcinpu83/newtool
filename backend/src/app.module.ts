@@ -14,10 +14,9 @@ import { GuardianModule } from './guardian/guardian.module';
 import { StressTestModule } from './stress-test/stress-test.module';
 import { FinancialModule } from './financial/financial.module';
 import { ChromeModule } from './chrome/chrome.module';
+import { GuardsModule } from './guards/guards.module';
 
 import { ProviderGuardianService } from './guardian/provider-guardian.service'; // Keep import if used by HealthMonitor but better just import Logic
-import { ChromeConnectionManager } from './managers/chrome-connection.manager';
-import { ProviderSessionManager } from './managers/provider-session.manager';
 
 @Module({
     imports: [
@@ -33,9 +32,10 @@ import { ProviderSessionManager } from './managers/provider-session.manager';
         GuardianModule,
         StressTestModule,
         FinancialModule,
-        ChromeModule
+        ChromeModule,
+        GuardsModule
     ],
     controllers: [DevParseController],
-    providers: [HealthMonitorService, ChromeConnectionManager, ProviderSessionManager],
+    providers: [HealthMonitorService],
 })
 export class AppModule { }

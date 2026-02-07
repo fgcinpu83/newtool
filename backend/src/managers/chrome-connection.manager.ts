@@ -1,24 +1,28 @@
 /**
- * ChromeConnectionManager v1.0
+ * ChromeConnectionManager v2.0 - SAFETY LOCK
  *
- * Injectable service for Chrome CDP connections
+ * Injectable service for Chrome CDP connections with explicit state machine
  * Tracks connection state and prevents double attachments
  */
 
 import { Injectable } from '@nestjs/common';
 
-export interface ChromeConnectionState {
+export type ChromeConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR';
+
+export interface ChromeConnectionInfo {
     port: number;
-    connected: boolean;
+    state: ChromeConnectionState;
     tabs: number;
     lastChecked: number;
     attached: boolean; // Whether we're actively attached via CDP
+    errorMessage?: string;
+    attachedAt?: number;
 }
 
 @Injectable()
 export class ChromeConnectionManager {
     // Track connection state per port (9222 for A, 9223 for B)
-    private connectionStates: Map<number, ChromeConnectionState> = new Map();
+    private connectionStates: Map<number, ChromeConnectionInfo> = new Map();
 
     // Track active CDP attachments to prevent double attach
     private activeAttachments: Set<number> = new Set();
@@ -30,7 +34,7 @@ export class ChromeConnectionManager {
         // Initialize states for both accounts
         this.connectionStates.set(9222, {
             port: 9222,
-            connected: false,
+            state: 'DISCONNECTED',
             tabs: 0,
             lastChecked: 0,
             attached: false
@@ -38,7 +42,7 @@ export class ChromeConnectionManager {
 
         this.connectionStates.set(9223, {
             port: 9223,
-            connected: false,
+            state: 'DISCONNECTED',
             tabs: 0,
             lastChecked: 0,
             attached: false
@@ -61,15 +65,30 @@ export class ChromeConnectionManager {
      * Check if Chrome is running on specified port
      */
     async checkConnection(port: number): Promise<boolean> {
+        const currentState = this.connectionStates.get(port);
+        if (currentState?.state === 'CONNECTING') {
+            console.log(`[ChromeManager] ⏳ Already connecting to port ${port}, skipping check`);
+            return false;
+        }
+
+        this.updateConnectionState(port, { state: 'CONNECTING' });
+
         try {
             const response = await fetch(`http://localhost:${port}/json/version`, {
                 signal: AbortSignal.timeout(2000)
             });
             const isConnected = response.ok;
-            this.updateConnectionState(port, { connected: isConnected, lastChecked: Date.now() });
+            this.updateConnectionState(port, {
+                state: isConnected ? 'CONNECTED' : 'DISCONNECTED',
+                lastChecked: Date.now()
+            });
             return isConnected;
-        } catch {
-            this.updateConnectionState(port, { connected: false, lastChecked: Date.now() });
+        } catch (error) {
+            this.updateConnectionState(port, {
+                state: 'ERROR',
+                errorMessage: error.message,
+                lastChecked: Date.now()
+            });
             return false;
         }
     }
@@ -93,10 +112,11 @@ export class ChromeConnectionManager {
 
     /**
      * Attempt to attach to Chrome CDP on specified port
-     * Returns false if already attached
+     * Returns false if already attached or in invalid state
      */
     async attachToChrome(port: number): Promise<boolean> {
-        console.log(`[ChromeManager] 🔗 Attempting to attach to Chrome on port ${port}`);
+        const currentState = this.connectionStates.get(port);
+        console.log(`[ChromeManager] 🔗 Attempting to attach to Chrome on port ${port} (current state: ${currentState?.state})`);
 
         // Check if already attached
         if (this.activeAttachments.has(port)) {
@@ -104,19 +124,42 @@ export class ChromeConnectionManager {
             return false;
         }
 
-        // Verify Chrome is running
-        const isConnected = await this.checkConnection(port);
-        if (!isConnected) {
-            console.log(`[ChromeManager] ❌ Chrome not running on port ${port}`);
+        // Check if already in connecting state
+        if (currentState?.state === 'CONNECTING') {
+            console.log(`[ChromeManager] ⏳ Already connecting to port ${port}, waiting...`);
             return false;
         }
 
-        // Mark as attached
-        this.activeAttachments.add(port);
-        this.updateConnectionState(port, { attached: true });
+        // Set connecting state
+        this.updateConnectionState(port, { state: 'CONNECTING' });
 
-        console.log(`[ChromeManager] ✅ Successfully attached to Chrome on port ${port}`);
-        return true;
+        try {
+            // Verify Chrome is running
+            const isConnected = await this.checkConnection(port);
+            if (!isConnected) {
+                console.log(`[ChromeManager] ❌ Chrome not running on port ${port}`);
+                this.updateConnectionState(port, { state: 'DISCONNECTED' });
+                return false;
+            }
+
+            // Mark as attached
+            this.activeAttachments.add(port);
+            this.updateConnectionState(port, {
+                attached: true,
+                attachedAt: Date.now(),
+                state: 'CONNECTED'
+            });
+
+            console.log(`[ChromeManager] ✅ Successfully attached to Chrome on port ${port}`);
+            return true;
+        } catch (error) {
+            console.error(`[ChromeManager] ❌ Failed to attach to Chrome on port ${port}:`, error);
+            this.updateConnectionState(port, {
+                state: 'ERROR',
+                errorMessage: error.message
+            });
+            return false;
+        }
     }
 
     /**
@@ -126,7 +169,11 @@ export class ChromeConnectionManager {
         console.log(`[ChromeManager] 🔌 Detaching from Chrome on port ${port}`);
 
         this.activeAttachments.delete(port);
-        this.updateConnectionState(port, { attached: false });
+        this.updateConnectionState(port, {
+            attached: false,
+            attachedAt: undefined,
+            state: 'DISCONNECTED'
+        });
     }
 
     /**
@@ -139,14 +186,14 @@ export class ChromeConnectionManager {
     /**
      * Get connection state for port
      */
-    getConnectionState(port: number): ChromeConnectionState | undefined {
+    getConnectionState(port: number): ChromeConnectionInfo | undefined {
         return this.connectionStates.get(port);
     }
 
     /**
      * Get all connection states
      */
-    getAllConnectionStates(): Record<number, ChromeConnectionState> {
+    getAllConnectionStates(): Record<number, ChromeConnectionInfo> {
         return Object.fromEntries(this.connectionStates);
     }
 
@@ -158,14 +205,18 @@ export class ChromeConnectionManager {
         this.activeAttachments.clear();
 
         for (const [port, state] of this.connectionStates) {
-            this.updateConnectionState(port, { attached: false });
+            this.updateConnectionState(port, {
+                attached: false,
+                attachedAt: undefined,
+                state: 'DISCONNECTED'
+            });
         }
     }
 
     /**
      * Update connection state for port
      */
-    private updateConnectionState(port: number, updates: Partial<ChromeConnectionState>): void {
+    private updateConnectionState(port: number, updates: Partial<ChromeConnectionInfo>): void {
         const current = this.connectionStates.get(port);
         if (current) {
             this.connectionStates.set(port, { ...current, ...updates });
