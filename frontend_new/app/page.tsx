@@ -111,20 +111,7 @@ function liveFeedReducer(state: LiveFeedItem[], action: LiveFeedAction): LiveFee
 // COMPONENT
 // ===============================================
 export default function Page() {
-    const [socket, setSocket] = useState<WebSocket | null>(null);
-    const { connected, ready } = useSystemStatus();
-
-    const emit = useCallback((eventName: string, payload?: any) => {
-        try {
-            if (!socket || socket.readyState !== WebSocket.OPEN) {
-                console.warn('[SOCKET] Emit skipped, socket not open', eventName);
-                return;
-            }
-            socket.send(JSON.stringify({ event: eventName, data: payload }));
-        } catch (err) {
-            console.error('[SOCKET] emit error', err);
-        }
-    }, [socket]);
+    const { connected, ready, emit, setOnMessage } = useSystemStatus();
     // const [connected, setConnected] = useState(false); // Moved to context
 
     // Toggle Debounce Lock
@@ -217,169 +204,165 @@ export default function Page() {
     };
 
 
-    // WebSocket Init (v3.5 Bridge Compatible)
-    useEffect(() => {
-        console.log('[SOCKET] 🚀 Initializing Bridge Connection to:', SOCKET_URL);
+    // Message handler for socket messages
+    const handleSocketMessage = useCallback((data: any) => {
+        try {
+            if (data.event === 'health:pipeline') {
+                setPipelineHealth(data.data);
+            } else if (data.event === 'provider_status') {
+                try {
+                    const acc = String(data.data.account);
+                    const provider = data.data.provider || 'UNKNOWN';
+                    const status = (data.data.status || '').toString().toLowerCase();
+                    let lampState: 'on'|'warn'|'off' = 'off';
+                    if (status === 'online' || status === 'ok' || status === 'active') lampState = 'on';
+                    else if (status === 'warn' || status === 'degraded' || status === 'slow') lampState = 'warn';
+                    else lampState = 'off';
 
-        const socket = new WebSocket(SOCKET_URL);
-
-        socket.onopen = () => {
-            // setConnected(true); // Moved to context
-            addLog('✅ Bridge Connected.');
-            console.log('[SOCKET] ✅ Bridge Active');
-            // Request initial status
-            socket.send(JSON.stringify({ type: 'GET_STATUS' }));
-        };
-
-        socket.onclose = () => {
-            // setConnected(false); // Moved to context
-            addLog('🔌 Bridge Disconnected. Retrying...');
-        };
-
-        socket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.event === 'health:pipeline') {
-                    setPipelineHealth(data.data);
-                } else if (data.event === 'provider_status') {
-                    try {
-                        const acc = String(data.data.account);
-                        const provider = data.data.provider || 'UNKNOWN';
-                        const status = (data.data.status || '').toString().toLowerCase();
-                        let lampState: 'on'|'warn'|'off' = 'off';
-                        if (status === 'online' || status === 'ok' || status === 'active') lampState = 'on';
-                        else if (status === 'warn' || status === 'degraded' || status === 'slow') lampState = 'warn';
-                        else lampState = 'off';
-
-                        setProviderStatuses(prev => ({
-                            ...prev,
-                            [acc]: {
-                                ...(prev[acc] || {}),
-                                primary: { slotIndex: 0, state: lampState, label: provider }
-                            }
-                        }));
-                    } catch (err) { console.warn('provider_status parse error', err); }
-                } else if (data.event === 'system_status') {
-                    setSystemStatus({
-                        accountA_active: data.data.accountA_active,
-                        accountB_active: data.data.accountB_active,
-                        balanceA: data.data.balanceA,
-                        balanceB: data.data.balanceB,
-                        profit_session: data.data.profit_session || '0.00',
-                        profit_today: data.data.profit_today || '0.00',
-                        providers: data.data.providers // Ensure providers are also updated
-                    });
-                    if (data.data.activeEventsA !== undefined) setActiveEventsA(data.data.activeEventsA);
-                    if (data.data.activeEventsB !== undefined) setActiveEventsB(data.data.activeEventsB);
-
-                    // Pipeline Health Logic
-                    if (data.data.providers) {
-                        const a1Live = data.data.providers.A1?.state === 'LIVE';
-                        const b1Live = data.data.providers.B1?.state === 'LIVE';
-                        let newStatus = 'RED', reason = 'WAITING_FOR_DATA';
-                        if (a1Live && b1Live) { newStatus = 'GREEN'; reason = 'BOTH_PROVIDERS_LIVE'; setScannerError(null); }
-                        else if (a1Live || b1Live) {
-                            newStatus = 'YELLOW';
-                            reason = a1Live ? 'WAITING_FOR_B' : 'WAITING_FOR_A';
-                            setScannerError({
-                                type: a1Live ? 'ACCOUNT_B_OFFLINE' : 'ACCOUNT_A_OFFLINE',
-                                message: a1Live ? 'Account B is offline.' : 'Account A is offline.',
-                                timestamp: Date.now()
-                            });
+                    setProviderStatuses(prev => ({
+                        ...prev,
+                        [acc]: {
+                            ...(prev[acc] || {}),
+                            primary: { slotIndex: 0, state: lampState, label: provider }
                         }
-                        setPipelineHealth(prev => ({ ...prev, status: newStatus, reason: reason }));
-                    }
-                } else if (data.event === 'live_feed') {
-                    dispatchLiveFeed({ type: 'ADD_ITEMS', items: [data.data] });
-                } else if (data.event === 'active_events') {
-                    if (data.data.A !== undefined) setActiveEventsA(data.data.A);
-                    if (data.data.B !== undefined) setActiveEventsB(data.data.B);
-                } else if (data.event === 'execution_history') {
-                    setExecutionHistory(data.data);
-                    playSound('success');
-                } else if (data.event === 'metrics:oipm') {
-                    setOipm(data.data);
-                } else if (data.event === 'status:guardian' || data.event === 'guardian:status') {
-                    setGuardianStatus(data.data);
-                } else if (data.event === 'chrome:status') {
-                    setChromeStatus(data.data);
-                    if (!data.data.connected) {
-                        addLog('⚠️ Chrome not detected on port 9222. Run LAUNCH_CHROME.bat first!');
-                    }
-                } else if (data.event === 'browser:opened') {
-                    addLog(`✅ Browser ${data.data.action}: ${data.data.url} (Account ${data.data.account})`);
-                } else if (data.event === 'browser:focused') {
-                    addLog(`🎯 Focused tab: ${data.data.tabTitle} (Account ${data.data.account})`);
-                } else if (data.event === 'browser:error') {
-                    addLog(`❌ Browser error (Account ${data.data.account}): ${data.data.error}`);
-                } else if (data.event === 'scanner:update_batch') {
-                    setScannerError(null);
+                    }));
+                } catch (err) { console.warn('provider_status parse error', err); }
+            } else if (data.event === 'system_status') {
+                setSystemStatus({
+                    accountA_active: data.data.accountA_active,
+                    accountB_active: data.data.accountB_active,
+                    balanceA: data.data.balanceA,
+                    balanceB: data.data.balanceB,
+                    profit_session: data.data.profit_session || '0.00',
+                    profit_today: data.data.profit_today || '0.00',
+                    providers: data.data.providers // Ensure providers are also updated
+                });
+                if (data.data.activeEventsA !== undefined) setActiveEventsA(data.data.activeEventsA);
+                if (data.data.activeEventsB !== undefined) setActiveEventsB(data.data.activeEventsB);
 
-                    // 🕵️ TRACE_AUDIT INJECTION
-                    if (data.data && data.data.length > 0) {
-                        console.log('[TRACE_AUDIT][LEVEL:FRONTEND] Socket Received (Batch):', {
-                            first_match_id: data.data[0].eventId,
-                            batch_size: data.data.length,
-                            latency: Date.now() - (data.data[0].lastUpdate || Date.now())
+                // Pipeline Health Logic
+                if (data.data.providers) {
+                    const a1Live = data.data.providers.A1?.state === 'LIVE';
+                    const b1Live = data.data.providers.B1?.state === 'LIVE';
+                    let newStatus = 'RED', reason = 'WAITING_FOR_DATA';
+                    if (a1Live && b1Live) { newStatus = 'GREEN'; reason = 'BOTH_PROVIDERS_LIVE'; setScannerError(null); }
+                    else if (a1Live || b1Live) {
+                        newStatus = 'YELLOW';
+                        reason = a1Live ? 'WAITING_FOR_B' : 'WAITING_FOR_A';
+                        setScannerError({
+                            type: a1Live ? 'ACCOUNT_B_OFFLINE' : 'ACCOUNT_A_OFFLINE',
+                            message: a1Live ? 'Account B is offline.' : 'Account A is offline.',
+                            timestamp: Date.now()
                         });
                     }
+                    setPipelineHealth(prev => ({ ...prev, status: newStatus, reason: reason }));
+                }
+            } else if (data.event === 'live_feed') {
+                dispatchLiveFeed({ type: 'ADD_ITEMS', items: [data.data] });
+            } else if (data.event === 'active_events') {
+                if (data.data.A !== undefined) setActiveEventsA(data.data.A);
+                if (data.data.B !== undefined) setActiveEventsB(data.data.B);
+            } else if (data.event === 'execution_history') {
+                setExecutionHistory(data.data);
+                playSound('success');
+            } else if (data.event === 'metrics:oipm') {
+                setOipm(data.data);
+            } else if (data.event === 'status:guardian' || data.event === 'guardian:status') {
+                setGuardianStatus(data.data);
+            } else if (data.event === 'chrome:status') {
+                setChromeStatus(data.data);
+                if (!data.data.connected) {
+                    addLog('⚠️ Chrome not detected on port 9222. Run LAUNCH_CHROME.bat first!');
+                }
+            } else if (data.event === 'browser:opened') {
+                addLog(`✅ Browser ${data.data.action}: ${data.data.url} (Account ${data.data.account})`);
+            } else if (data.event === 'browser:focused') {
+                addLog(`🎯 Focused tab: ${data.data.tabTitle} (Account ${data.data.account})`);
+            } else if (data.event === 'browser:error') {
+                addLog(`❌ Browser error (Account ${data.data.account}): ${data.data.error}`);
+            } else if (data.event === 'scanner:update_batch') {
+                setScannerError(null);
 
-                    const newItems = data.data.map((pair: any) => ({
-                        id: pair.pairId, timestamp: pair.lastUpdate,
-                        account: pair.legA?.provider || '-', bookmaker: pair.legA?.bookmaker || '-',
-                        home: pair.legA?.home || pair.legB?.home || '-', away: pair.legA?.away || pair.legB?.away || '-',
-                        market: pair.market, selection: pair.legA?.odds.selection || '-',
-                        line: pair.legA?.odds.line || '-', odds: String(pair.legA?.odds.val || '-'),
-                        decOdds: pair.legA?.odds.val || 0,
-                        accountB: pair.legB?.provider || '-', bookmakerB: pair.legB?.bookmaker || '-',
-                        selectionB: pair.legB?.odds.selection || '-', marketB: pair.market,
-                        lineB: pair.legB?.odds.line || '-', oddsB: String(pair.legB?.odds.val || '-'),
-                        decOddsB: pair.legB?.odds.val || 0, profit: pair.profit, state: pair.state
-                    }));
-                    updateBuffer.current = [...newItems, ...updateBuffer.current].slice(0, 200);
-                } else if (data.event === 'system_log') {
-                    const prefix = data.data.level === 'error' ? '❌' : data.data.level === 'warn' ? '⚠️' : '✅';
-                    addLog(`${prefix} ${data.data.message}`);
-                } else if (data.event === 'stress_metrics') {
-                    if (data.data.type === 'HEAP') setStressMetrics(prev => ({ ...prev, heap: data.data.value }));
-                } else if (data.event === 'stress_anomaly') {
-                    if (data.data.type === 'WS_DROP') setStressMetrics(prev => ({ ...prev, wsDrops: prev.wsDrops + 1 }));
-                } else if (data.event === 'UNKNOWN_PROVIDER_DATA') {
-                    setUnknownTraffic(prev => {
-                        // Deduplicate by URL
-                        if (prev.some(t => t.url === data.data.url)) return prev;
-                        return [data.data, ...prev].slice(0, 5); // Keep last 5
+                // 🕵️ TRACE_AUDIT INJECTION
+                if (data.data && data.data.length > 0) {
+                    console.log('[TRACE_AUDIT][LEVEL:FRONTEND] Socket Received (Batch):', {
+                        first_match_id: data.data[0].eventId,
+                        batch_size: data.data.length,
+                        latency: Date.now() - (data.data[0].lastUpdate || Date.now())
                     });
                 }
-            } catch (err) {
-                console.error('Failed to parse WebSocket message:', err);
+
+                const newItems = data.data.map((pair: any) => ({
+                    id: pair.pairId, timestamp: pair.lastUpdate,
+                    account: pair.legA?.provider || '-', bookmaker: pair.legA?.bookmaker || '-',
+                    home: pair.legA?.home || pair.legB?.home || '-', away: pair.legA?.away || pair.legB?.away || '-',
+                    market: pair.market, selection: pair.legA?.odds.selection || '-',
+                    line: pair.legA?.odds.line || '-', odds: String(pair.legA?.odds.val || '-'),
+                    decOdds: pair.legA?.odds.val || 0,
+                    accountB: pair.legB?.provider || '-', bookmakerB: pair.legB?.bookmaker || '-',
+                    selectionB: pair.legB?.odds.selection || '-', marketB: pair.market,
+                    lineB: pair.legB?.odds.line || '-', oddsB: String(pair.legB?.odds.val || '-'),
+                    decOddsB: pair.legB?.odds.val || 0, profit: pair.profit, state: pair.state
+                }));
+                updateBuffer.current = [...newItems, ...updateBuffer.current].slice(0, 200);
+            } else if (data.event === 'system_log') {
+                const prefix = data.data.level === 'error' ? '❌' : data.data.level === 'warn' ? '⚠️' : '✅';
+                addLog(`${prefix} ${data.data.message}`);
+            } else if (data.event === 'stress_metrics') {
+                if (data.data.type === 'HEAP') setStressMetrics(prev => ({ ...prev, heap: data.data.value }));
+            } else if (data.event === 'stress_anomaly') {
+                if (data.data.type === 'WS_DROP') setStressMetrics(prev => ({ ...prev, wsDrops: prev.wsDrops + 1 }));
+            } else if (data.event === 'UNKNOWN_PROVIDER_DATA') {
+                setUnknownTraffic(prev => {
+                    // Deduplicate by URL
+                    if (prev.some(t => t.url === data.data.url)) return prev;
+                    return [data.data, ...prev].slice(0, 5); // Keep last 5
+                });
             }
-        };
+        } catch (err) {
+            console.error('Failed to parse WebSocket message:', err);
+        }
+    }, [addLog, playSound]);
 
-        setSocket(socket);
+    // Set message handler
+    useEffect(() => {
+        setOnMessage(handleSocketMessage);
+        return () => setOnMessage(null);
+    }, [setOnMessage, handleSocketMessage]);
 
-        
+    // Emit GET_STATUS when connected
+    useEffect(() => {
+        if (connected) {
+            emit('type', 'GET_STATUS');
+            addLog('✅ Bridge Connected.');
+            console.log('[SOCKET] ✅ Bridge Active');
+        }
+    }, [connected, emit, addLog]);
 
-        // Check Chrome status on load
-        setTimeout(() => {
-            socket.send(JSON.stringify({ type: 'command', data: { type: 'CHECK_CHROME' } }));
+    // Check Chrome status on load
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            emit('type', { type: 'command', data: { type: 'CHECK_CHROME' } });
         }, 2000);
+        return () => clearTimeout(timer);
+    }, [emit]);
 
+    // Flush update buffer
+    useEffect(() => {
         const flushInterval = setInterval(() => {
             if (updateBuffer.current.length === 0) return;
             dispatchLiveFeed({ type: 'ADD_ITEMS', items: [...updateBuffer.current] });
             updateBuffer.current = [];
         }, 200);
+        return () => clearInterval(flushInterval);
+    }, []);
 
+    // Keep alive
+    useEffect(() => {
         const keepAliveInt = setInterval(() => {
             if (typeof window !== 'undefined') window.postMessage({ type: 'DASHBOARD_PING', ts: Date.now() }, '*');
         }, 25000);
-
-        return () => {
-            socket.close();
-            clearInterval(flushInterval);
-            clearInterval(keepAliveInt);
-        };
+        return () => clearInterval(keepAliveInt);
     }, []);
 
     // Consolidated WebSocket event handling and helper definitions.
@@ -541,7 +524,11 @@ export default function Page() {
                     </div>
                     
                     <div className="flex items-center gap-2 text-sm text-slate-400">
-                        <span className={`size-2 rounded-full ${(ready || connected) ? 'bg-[#22c55e] lamp-active' : 'bg-[#ef4444]'}`}></span>
+                        <span className={`size-2 rounded-full ${
+                            ready ? 'bg-[#22c55e] lamp-active' : 
+                            connected ? 'bg-yellow-500 lamp-active' : 
+                            'bg-[#ef4444]'
+                        }`}></span>
                         <span>{ready ? 'SYSTEM READY' : connected ? 'System Online' : 'Offline'}</span>
                     </div>
                     <div className="h-8 w-[1px] bg-[#2a374f]"></div>

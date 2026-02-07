@@ -1,10 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 
 interface SystemStatus {
   connected: boolean;
   ready: boolean;
+  emit: (eventName: string, payload?: any) => void;
+  setOnMessage: (callback: ((data: any) => void) | null) => void;
 }
 
 const SystemStatusContext = createContext<SystemStatus | undefined>(undefined);
@@ -16,9 +18,24 @@ const SOCKET_URL = `ws://${BACKEND_HOST}:${BACKEND_PORT}`;
 export function SystemStatusProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [ready, setReady] = useState(false);
+  const socketRef = useRef<WebSocket | null>(null);
+  const onMessageRef = useRef<((data: any) => void) | null>(null);
+
+  const emit = (eventName: string, payload?: any) => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('[SOCKET] Emit skipped, socket not open', eventName);
+      return;
+    }
+    socketRef.current.send(JSON.stringify({ event: eventName, data: payload }));
+  };
+
+  const setOnMessage = (callback: ((data: any) => void) | null) => {
+    onMessageRef.current = callback;
+  };
 
   useEffect(() => {
     const socket = new WebSocket(SOCKET_URL);
+    socketRef.current = socket;
 
     socket.onopen = () => {
       setConnected(true);
@@ -34,6 +51,8 @@ export function SystemStatusProvider({ children }: { children: ReactNode }) {
         if (data.event === 'system:ready') {
           console.log('[SYSTEM] READY EVENT RECEIVED');
           setReady(true);
+        } else if (onMessageRef.current) {
+          onMessageRef.current(data);
         }
       } catch (err) {
         // ignore
@@ -46,7 +65,7 @@ export function SystemStatusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <SystemStatusContext.Provider value={{ connected, ready }}>
+    <SystemStatusContext.Provider value={{ connected, ready, emit, setOnMessage }}>
       {children}
     </SystemStatusContext.Provider>
   );
