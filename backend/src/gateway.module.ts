@@ -8,6 +8,7 @@ import * as WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Socket } from 'socket.io';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnApplicationBootstrap {
@@ -73,6 +74,12 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
         this.trafficBus.emit('stream_data', actualData);
         this.commandEvents.emit('endpoint_captured', actualData); // 🛡️ Legacy compatibility
+    }
+
+    @SubscribeMessage('ping')
+    handlePing(@ConnectedSocket() client: Socket) {
+        console.log('[GATEWAY] PING FROM CLIENT', client.id);
+        client.emit('pong', { ok: true, ts: Date.now() });
     }
 
     // Basic methods used by WorkerService - updated for Socket.IO
