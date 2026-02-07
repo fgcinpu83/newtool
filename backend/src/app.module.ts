@@ -15,13 +15,13 @@ import { StressTestModule } from './stress-test/stress-test.module';
 import { FinancialModule } from './financial/financial.module';
 import { ChromeModule } from './chrome/chrome.module';
 import { GuardsModule } from './guards/guards.module';
-
-import { ProviderGuardianService } from './guardian/provider-guardian.service'; // Keep import if used by HealthMonitor but better just import Logic
+import { ProviderModule } from './managers/provider.module';
 
 @Module({
     imports: [
         ScheduleModule.forRoot(),
         SharedModule,
+        ProviderModule,
         WorkerModule,
         ArbitrageModule,
         MarketModule,

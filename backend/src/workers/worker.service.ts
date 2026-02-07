@@ -997,14 +997,11 @@ export class WorkerService implements OnModuleInit {
                 // 🐣 LATE BIRTH (For Recorder data)
                 this.providerRegistry.get(regKey).state = 'LIVE';
                 
-                // 🛡️ Sync ProviderSessionManager
+                // 🛡️ Report to ProviderSessionManager (manager decides state)
                 const slotKey = this.getSlotKeyForProvider(account, verifiedProvider);
                 if (slotKey) {
-                    this.providerManager.updateProviderState(slotKey, {
-                        state: 'LIVE',
-                        ready: true,
-                        loggedIn: true,
-                        providerType: verifiedProvider
+                    this.providerManager.reportEvent(slotKey, 'ODDS_RECEIVED', {
+                        providerType: verifiedProvider,
                     });
                 }
                 
@@ -1017,10 +1014,12 @@ export class WorkerService implements OnModuleInit {
             if (parsedResult.balance !== null) {
                 this.balance[account] = parsedResult.balance.toFixed(2);
                 
-                // 🛡️ Update balance in ProviderSessionManager for all providers in this account
+                // 🛡️ Report balance to ProviderSessionManager
                 for (let i = 1; i <= 5; i++) {
                     const slotKey = `${account}${i}`;
-                    this.providerManager.updateProviderBalance(slotKey, this.balance[account]);
+                    this.providerManager.reportEvent(slotKey, 'BALANCE_RECEIVED', {
+                        balance: this.balance[account],
+                    });
                 }
                 
                 const balMsg = `[BALANCE-SYNC] ${account} updated to ${this.balance[account]}`;
@@ -1389,20 +1388,19 @@ export class WorkerService implements OnModuleInit {
 
                     this.providerStatus[key] = finalState;
                     
-                    // 🛡️ Sync with ProviderSessionManager
-                    this.providerManager.updateProviderState(key, {
-                        state: finalState,
-                        ready: finalState === 'LIVE',
-                        providerType: providerName
-                    });
+                    // 🛡️ Report guardian state to ProviderSessionManager
+                    if (finalState === 'LIVE') {
+                        this.providerManager.reportEvent(key, 'ODDS_RECEIVED', { providerType: providerName });
+                    } else if (finalState === 'HEARTBEAT_ONLY' || finalState === 'DEAD') {
+                        this.providerManager.reportEvent(key, 'DATA_STALE', { providerType: providerName });
+                    } else {
+                        this.providerManager.reportEvent(key, 'RESET');
+                    }
                 } else {
                     this.providerStatus[key] = 'INACTIVE';
                     
-                    // 🛡️ Sync with ProviderSessionManager
-                    this.providerManager.updateProviderState(key, {
-                        state: 'INACTIVE',
-                        ready: false
-                    });
+                    // 🛡️ Report to ProviderSessionManager
+                    this.providerManager.reportEvent(key, 'RESET');
                 }
             } else {
                 this.providerStatus[key] = 'INACTIVE';

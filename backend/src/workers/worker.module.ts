@@ -15,12 +15,11 @@ import { ContractRegistry } from './contract-registry.service';
 import { WorkerManager } from './worker.manager';
 import { AfbWorker } from './afb.worker';
 import { CmdWorker } from './cmd.worker';
-import { ProviderSessionManager } from '../managers/provider-session.manager';
 
 @Module({
     imports: [forwardRef(() => MarketModule), GatewayModule, DiscoveryModule, PairingModule, GuardianModule, SharedModule, ChromeModule],
     controllers: [WorkerController, BridgeController],
-    providers: [WorkerService, BrowserAutomationService, WorkerManager, AfbWorker, CmdWorker, ProviderSessionManager],
+    providers: [WorkerService, BrowserAutomationService, WorkerManager, AfbWorker, CmdWorker],
     exports: [WorkerService, WorkerManager, AfbWorker, CmdWorker],
 })
 export class WorkerModule { }

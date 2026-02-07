@@ -44,12 +44,12 @@ export class GlobalExecutionGuard {
 
         this.logger.log(`[EXECUTION-GUARD] 🔍 Checking execution for ${account}:${providerId} stake:${stake} odds:${odds}`);
 
-        // 1. Check provider readiness
+        // 1. Check provider readiness (via manager v2.0 — state machine)
         const providerState = this.providerManager.getProviderState(providerId);
-        const providerReady = providerState?.ready === true && providerState?.loggedIn === true;
+        const providerReady = providerState?.state === 'READY';
 
         if (!providerReady) {
-            const reason = `Provider ${providerId} not ready (ready:${providerState?.ready}, loggedIn:${providerState?.loggedIn})`;
+            const reason = `Provider ${providerId} not ready (state:${providerState?.state})`;
             this.logger.warn(`[EXECUTION-GUARD] 🚫 BLOCKED: ${reason}`);
             return {
                 allowed: false,
