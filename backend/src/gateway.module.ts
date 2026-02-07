@@ -9,6 +9,7 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Socket } from 'socket.io';
+import { ProviderSessionManager } from './managers/provider-session.manager';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnApplicationBootstrap {
@@ -20,17 +21,36 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     public trafficBus: EventEmitter = new EventEmitter();
     public commandEvents: EventEmitter = new EventEmitter();
 
-    constructor() { }
+    constructor(private providerManager: ProviderSessionManager) { }
 
     onModuleInit() {
         console.log('Gateway initialized');
+        
+        // Check for system readiness every 2 seconds
+        const readinessCheck = setInterval(() => {
+            if (this.providerManager.isSystemReady()) {
+                console.log('[SYSTEM] BACKEND READY - Providers active on both accounts');
+                this.server.emit('system:ready', {
+                    status: 'ready',
+                    ts: Date.now(),
+                    systemStatus: this.providerManager.getSystemStatus()
+                });
+                clearInterval(readinessCheck);
+            }
+        }, 2000);
+        
+        // Fallback timeout after 30 seconds
         setTimeout(() => {
-            console.log('[SYSTEM] BACKEND READY');
-            this.server.emit('system:ready', {
-                status: 'ready',
-                ts: Date.now(),
-            });
-        }, 500);
+            if (!this.providerManager.isSystemReady()) {
+                console.log('[SYSTEM] BACKEND READY - Timeout reached (providers may not be ready)');
+                this.server.emit('system:ready', {
+                    status: 'ready',
+                    ts: Date.now(),
+                    systemStatus: this.providerManager.getSystemStatus()
+                });
+                clearInterval(readinessCheck);
+            }
+        }, 30000);
     }
 
     async onApplicationBootstrap() {

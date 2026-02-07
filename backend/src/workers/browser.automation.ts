@@ -2,7 +2,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { exec } from 'child_process';
 import { AppGateway } from '../gateway.module';
 import { RedisService } from '../shared/redis.service';
-import { openUrlInChrome, checkChromeConnection, focusAccountTab } from '../chrome/chrome-connector';
+import { ChromeConnector } from '../chrome/chrome-connector';
+import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -35,16 +36,18 @@ export class BrowserAutomationService implements OnModuleInit {
 
     constructor(
         private gateway: AppGateway,
-        private redis: RedisService
+        private redis: RedisService,
+        private chromeManager: ChromeConnectionManager
     ) { }
 
     async onModuleInit() {
         this.logger.log(`🌐 BrowserAutomationService v4.0 CDP MODE (InstanceID: ${this.instanceId})`);
 
         // Check Chrome connection on startup
-        const chromeStatus = await checkChromeConnection();
-        if (chromeStatus.connected) {
-            this.logger.log(`✅ Chrome detected on port 9222 (${chromeStatus.tabs} tabs open)`);
+        const chromeStatus = await this.chromeManager.checkConnection(9222);
+        const tabsCount = chromeStatus ? await this.chromeManager.getTabsCount(9222) : 0;
+        if (chromeStatus) {
+            this.logger.log(`✅ Chrome detected on port 9222 (${tabsCount} tabs open)`);
         } else {
             this.logger.warn(`⚠️ Chrome NOT detected on port 9222. Run LAUNCH_CHROME.bat first!`);
         }
@@ -131,7 +134,7 @@ export class BrowserAutomationService implements OnModuleInit {
         this.accountUrls.set(account, url);
 
         // Use CDP to open/focus tab
-        const result = await openUrlInChrome(url, account as 'A' | 'B');
+        const result = await this.openUrlInChrome(url, account as 'A' | 'B');
 
         if (result.success) {
             this.logger.log(`[CDP] ✅ ${result.action === 'opened' ? 'Opened new tab' : 'Focused existing tab'}: ${result.tabTitle}`);
@@ -180,7 +183,7 @@ export class BrowserAutomationService implements OnModuleInit {
             return;
         }
 
-        const result = await focusAccountTab(url);
+        const result = await this.focusAccountTab(url);
 
         if (result.success) {
             this.logger.log(`[CDP] 🎯 Focused tab for Account ${account}`);
@@ -200,7 +203,13 @@ export class BrowserAutomationService implements OnModuleInit {
      * Report Chrome connection status
      */
     private async reportChromeStatus() {
-        const status = await checkChromeConnection();
+        const connected = await this.chromeManager.checkConnection(9222);
+        const tabs = connected ? await this.chromeManager.getTabsCount(9222) : 0;
+        const status = {
+            connected,
+            tabs,
+            error: connected ? undefined : 'Chrome not reachable on port 9222'
+        };
         this.gateway.sendUpdate('chrome:status', status);
     }
 
@@ -273,5 +282,94 @@ export class BrowserAutomationService implements OnModuleInit {
             const WIRE_LOG = path.join(logDir, 'wire_debug.log');
             fs.appendFileSync(WIRE_LOG, `[${new Date().toISOString()}] ${msg}\n`);
         } catch (e) { }
+    }
+
+    private async openUrlInChrome(url: string, account: 'A' | 'B'): Promise<{
+        success: boolean;
+        action: 'opened' | 'focused' | 'failed';
+        tabTitle?: string;
+        error?: string;
+    }> {
+        const connector = new ChromeConnector(9222, this.chromeManager);
+        
+        // Extract domain for deduplication
+        let domain = url;
+        try {
+            domain = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+        } catch {}
+        
+        const lockKey = `${account}:${domain}`;
+        
+        // Check if Chrome is running
+        const isConnected = await connector.isConnected();
+        if (!isConnected) {
+            return {
+                success: false,
+                action: 'failed',
+                error: 'Chrome not running on port 9222. Run LAUNCH_CHROME.bat first.'
+            };
+        }
+
+        // Check if tab with this URL already exists
+        const existingTabs = await connector.findTabsByUrl(url);
+        
+        if (existingTabs.length > 0) {
+            // Focus existing tab
+            await connector.focusTab(existingTabs[0]);
+            return {
+                success: true,
+                action: 'focused',
+                tabTitle: existingTabs[0].title
+            };
+        }
+
+        // Open new tab
+        const newTab = await connector.openNewTab(url);
+        
+        if (newTab) {
+            return {
+                success: true,
+                action: 'opened',
+                tabTitle: url
+            };
+        }
+
+        return {
+            success: false,
+            action: 'failed',
+            error: 'Failed to open new tab'
+        };
+    }
+
+    private async focusAccountTab(urlPattern: string): Promise<{
+        success: boolean;
+        tabTitle?: string;
+        error?: string;
+    }> {
+        const connector = new ChromeConnector(9222, this.chromeManager);
+        
+        try {
+            const tabs = await connector.findTabsByUrl(urlPattern);
+            
+            if (tabs.length === 0) {
+                return {
+                    success: false,
+                    error: `No tab found matching: ${urlPattern}`
+                };
+            }
+
+            await connector.focusTab(tabs[0]);
+            
+            return {
+                success: true,
+                tabTitle: tabs[0].title
+            };
+            
+        } catch (error: any) {
+            return {
+                success: false,
+                error: error.message || 'Failed to focus tab'
+            };
+        }
     }
 }

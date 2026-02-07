@@ -18,6 +18,7 @@ import {
     RoutingResult 
 } from '../providers';
 import { RedisService } from '../shared/redis.service';
+import { ProviderSessionManager } from '../managers/provider-session.manager';
 
 export interface TrafficPacket {
     account: 'A' | 'B';
@@ -44,7 +45,10 @@ export class TrafficRouterService {
     private configCacheTime: number = 0;
     private readonly CONFIG_CACHE_TTL = 5000; // 5 detik
     
-    constructor(private redisService: RedisService) {}
+    constructor(
+        private redisService: RedisService,
+        private providerManager: ProviderSessionManager
+    ) {}
     
     /**
      * Main entry point: Process incoming traffic
@@ -73,6 +77,16 @@ export class TrafficRouterService {
                 parsed: { odds: [], balance: null, rawMatchCount: 0 },
                 shouldProcess: false,
                 reason: `Account ${account} is not active`,
+            };
+        }
+        
+        // 3.5. Check if account has ready providers
+        if (!this.providerManager.isAccountReady(account)) {
+            return {
+                routing: { provider: 'UNKNOWN', source: 'FALLBACK', account },
+                parsed: { odds: [], balance: null, rawMatchCount: 0 },
+                shouldProcess: false,
+                reason: `Account ${account} has no ready providers`,
             };
         }
         

@@ -25,6 +25,7 @@ import { UniversalDecoderService } from '../shared/decoder.service';
 import { parseProvider } from '../contracts';
 import { EventIdentity } from '../utils/identity.utils';
 import { SystemConfig, ProviderType, getAccountForProvider, detectProviderFromUrl } from '../providers/account-binding.config';
+import { ProviderSessionManager } from '../managers/provider-session.manager';
 
 // ðŸ”¥ PROVIDER STATE MACHINE
 // Expanded to include Guardian states
@@ -94,8 +95,12 @@ export class WorkerService implements OnModuleInit {
         private pairingService: PairingService,
         private guardianService: ProviderGuardianService,
         private registry: ContractRegistry,
-        private decoder: UniversalDecoderService
+        private decoder: UniversalDecoderService,
+        private providerManager: ProviderSessionManager
     ) {
+        // 🛡️ Initialize Provider Session Manager
+        // Already initialized in constructor
+
         // Subscription to Registry for ORCHESTRATION is now handled dynamically in orchestrateWorker
 
         // Initialize without worker subscriptions
@@ -991,6 +996,18 @@ export class WorkerService implements OnModuleInit {
             if (parsedResult.odds.length > 0) {
                 // 🐣 LATE BIRTH (For Recorder data)
                 this.providerRegistry.get(regKey).state = 'LIVE';
+                
+                // 🛡️ Sync ProviderSessionManager
+                const slotKey = this.getSlotKeyForProvider(account, verifiedProvider);
+                if (slotKey) {
+                    this.providerManager.updateProviderState(slotKey, {
+                        state: 'LIVE',
+                        ready: true,
+                        loggedIn: true,
+                        providerType: verifiedProvider
+                    });
+                }
+                
                 const streamMsg = `[STREAM] 🌊 Processed ${parsedResult.odds.length} odds for ${regKey}`;
                 console.log(streamMsg);
                 try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${streamMsg}\n`); } catch (e) { }
@@ -999,6 +1016,13 @@ export class WorkerService implements OnModuleInit {
 
             if (parsedResult.balance !== null) {
                 this.balance[account] = parsedResult.balance.toFixed(2);
+                
+                // 🛡️ Update balance in ProviderSessionManager for all providers in this account
+                for (let i = 1; i <= 5; i++) {
+                    const slotKey = `${account}${i}`;
+                    this.providerManager.updateProviderBalance(slotKey, this.balance[account]);
+                }
+                
                 const balMsg = `[BALANCE-SYNC] ${account} updated to ${this.balance[account]}`;
                 console.log(balMsg);
                 try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${balMsg}\n`); } catch (e) { }
@@ -1364,8 +1388,21 @@ export class WorkerService implements OnModuleInit {
                     }
 
                     this.providerStatus[key] = finalState;
+                    
+                    // 🛡️ Sync with ProviderSessionManager
+                    this.providerManager.updateProviderState(key, {
+                        state: finalState,
+                        ready: finalState === 'LIVE',
+                        providerType: providerName
+                    });
                 } else {
                     this.providerStatus[key] = 'INACTIVE';
+                    
+                    // 🛡️ Sync with ProviderSessionManager
+                    this.providerManager.updateProviderState(key, {
+                        state: 'INACTIVE',
+                        ready: false
+                    });
                 }
             } else {
                 this.providerStatus[key] = 'INACTIVE';
@@ -1485,6 +1522,9 @@ export class WorkerService implements OnModuleInit {
         for (let i = 1; i <= 5; i++) {
             this.providerStatus[`${account}${i}`] = 'INACTIVE';
         }
+        
+        // 🛡️ Reset ProviderSessionManager
+        this.providerManager.resetAccountProviders(account as 'A' | 'B');
 
         // 2. FULLY DELETE from Provider Registry (not just set inactive)
         const prefix = `${account}:`;
@@ -1605,6 +1645,9 @@ export class WorkerService implements OnModuleInit {
         for (const key of Object.keys(this.providerStatus)) {
             this.providerStatus[key] = 'INACTIVE';
         }
+        
+        // 🛡️ Reset ProviderSessionManager
+        this.providerManager.forceResetAll();
 
         // 4. Force UI update
         this.broadcastStatus();
@@ -1620,6 +1663,19 @@ export class WorkerService implements OnModuleInit {
     private async runProviderJob(provider: string) {
         console.log(`[ORCHESTRATOR] 🛰️  Starting Parallel Job for ${provider}`);
         return true;
+    }
+
+    /**
+     * Get the slot key (A1, A2, etc.) for a provider
+     */
+    private getSlotKeyForProvider(account: string, provider: string): string | null {
+        const slots = this.providerSlots[account];
+        if (!slots) return null;
+        
+        const index = slots.indexOf(provider);
+        if (index === -1) return null;
+        
+        return `${account}${index + 1}`;
     }
 }
 

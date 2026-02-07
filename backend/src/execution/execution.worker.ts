@@ -1,14 +1,15 @@
 import { executeArbitrage } from "./executionEngine";
+import { ProviderReadiness } from "./executionGuard";
 import { parentPort } from 'worker_threads';
 
 if (parentPort) {
     parentPort.on('message', async (data) => {
         try {
-            const { opportunities } = data;
+            const { opportunities, readiness } = data;
             const results = [];
 
             for (const opp of opportunities) {
-                const r = await executeArbitrage(opp);
+                const r = await executeArbitrage(opp, readiness);
                 if (r) results.push(r);
             }
 

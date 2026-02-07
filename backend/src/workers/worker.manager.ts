@@ -7,7 +7,6 @@ import { AppGateway } from '../gateway.module';
 import { ContractRegistry } from './contract-registry.service';
 import { AfbWorker } from './afb.worker';
 import { CmdWorker } from './cmd.worker';
-import { CDPBridgeService } from '../shared/cdp-bridge.service';
 import { UniversalDecoderService } from '../shared/decoder.service';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -19,7 +18,6 @@ export class WorkerManager implements OnModuleInit {
         private contracts: ContractRegistry,
         private afbWorker: AfbWorker,
         private cmdWorker: CmdWorker,
-        private cdpBridge: CDPBridgeService,
         private decoder: UniversalDecoderService
     ) {
         console.log("[WORKER-MANAGER] 🏗️ Hard Constructor call");
@@ -40,11 +38,7 @@ export class WorkerManager implements OnModuleInit {
             })().catch(err => console.error(`[ROUTER-ERROR] ${err.message}`));
         });
 
-        // 🚀 Ingest recovered CDP Data
-        this.cdpBridge.events.on('substantive_data', (data) => {
-            console.log(`[WORKER-MANAGER] 🛰️  Substantive CDP Data: ${data.type} (Source: ${data.url || 'Unknown'})`);
-            this.routePacket(data.url || 'cdp_recovered', data.payload, 'DESKTOP');
-        });
+        // CDP Bridge removed - CDP operations must go through ChromeConnectionManager
     }
 
     private async routePacket(url: string, payload: any, account: string) {

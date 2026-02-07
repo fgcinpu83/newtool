@@ -1,13 +1,13 @@
 import { buildExecutionPlan } from "./executionPlanner";
-import { validateExecution } from "./executionGuard";
+import { validateExecution, ProviderReadiness } from "./executionGuard";
 import { enforceCooldown } from "./cooldownController";
 import { betOnA } from "./betExecutorA";
 import { betOnB } from "./betExecutorB";
 import { ArbitrageOpportunity } from "../arbitrage/schemas";
 import { ExecutionResult } from "./schemas";
 
-export async function executeArbitrage(opp: ArbitrageOpportunity): Promise<ExecutionResult | null> {
-    if (!validateExecution(opp)) return null;
+export async function executeArbitrage(opp: ArbitrageOpportunity, readiness?: ProviderReadiness): Promise<ExecutionResult | null> {
+    if (!validateExecution(opp, readiness)) return null;
 
     // Enforce 60s global cooldown
     await enforceCooldown(60000);

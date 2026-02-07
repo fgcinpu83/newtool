@@ -9,16 +9,18 @@ import { PairingModule } from '../pairing/pairing.module';
 import { GuardianModule } from '../guardian/guardian.module';
 import { BrowserAutomationService } from './browser.automation';
 import { SharedModule } from '../shared/shared.module';
+import { ChromeModule } from '../chrome/chrome.module';
 
 import { ContractRegistry } from './contract-registry.service';
 import { WorkerManager } from './worker.manager';
 import { AfbWorker } from './afb.worker';
 import { CmdWorker } from './cmd.worker';
+import { ProviderSessionManager } from '../managers/provider-session.manager';
 
 @Module({
-    imports: [forwardRef(() => MarketModule), GatewayModule, DiscoveryModule, PairingModule, GuardianModule, SharedModule],
+    imports: [forwardRef(() => MarketModule), GatewayModule, DiscoveryModule, PairingModule, GuardianModule, SharedModule, ChromeModule],
     controllers: [WorkerController, BridgeController],
-    providers: [WorkerService, BrowserAutomationService, WorkerManager, AfbWorker, CmdWorker],
+    providers: [WorkerService, BrowserAutomationService, WorkerManager, AfbWorker, CmdWorker, ProviderSessionManager],
     exports: [WorkerService, WorkerManager, AfbWorker, CmdWorker],
 })
 export class WorkerModule { }

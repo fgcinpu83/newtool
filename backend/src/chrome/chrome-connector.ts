@@ -10,6 +10,7 @@
  */
 
 import WebSocket from 'ws';
+import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 
 interface ChromeTab {
     id: string;
@@ -31,23 +32,18 @@ export class ChromeConnector {
     private debugPort: number;
     private connections: Map<string, WebSocket> = new Map();
     private messageId: number = 1;
+    private connectionManager: ChromeConnectionManager;
 
-    constructor(debugPort: number = 9222) {
+    constructor(debugPort: number = 9222, connectionManager: ChromeConnectionManager) {
         this.debugPort = debugPort;
+        this.connectionManager = connectionManager;
     }
 
     /**
      * Check if Chrome is reachable
      */
     async isConnected(): Promise<boolean> {
-        try {
-            const response = await fetch(`http://localhost:${this.debugPort}/json/version`, {
-                signal: AbortSignal.timeout(2000)
-            });
-            return response.ok;
-        } catch {
-            return false;
-        }
+        return await this.connectionManager.checkConnection(this.debugPort);
     }
 
     /**
@@ -145,6 +141,14 @@ export class ChromeConnector {
             return this.connections.get(tab.id)!;
         }
 
+        // Check if we're already attached to this Chrome instance
+        if (!this.connectionManager.isAttached(this.debugPort)) {
+            const attached = await this.connectionManager.attachToChrome(this.debugPort);
+            if (!attached) {
+                throw new Error(`Cannot attach to Chrome on port ${this.debugPort} - already attached or not running`);
+            }
+        }
+
         return new Promise((resolve, reject) => {
             const ws = new WebSocket(tab.webSocketDebuggerUrl!);
             
@@ -237,6 +241,7 @@ export class ChromeConnector {
             ws.close();
         }
         this.connections.clear();
+        this.connectionManager.detachFromChrome(this.debugPort);
     }
 }
 
@@ -247,7 +252,11 @@ let connectorInstance: ChromeConnector | null = null;
 
 export function getChromeConnector(): ChromeConnector {
     if (!connectorInstance) {
-        connectorInstance = new ChromeConnector(9222);
+        const globalManager = ChromeConnectionManager.getGlobalInstance();
+        if (!globalManager) {
+            throw new Error('ChromeConnectionManager not initialized');
+        }
+        connectorInstance = new ChromeConnector(9222, globalManager);
     }
     return connectorInstance;
 }

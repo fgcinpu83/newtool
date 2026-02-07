@@ -6,7 +6,8 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { ChromeConnector, checkChromeConnection } from '../chrome/chrome-connector';
+import { ChromeConnector } from '../chrome/chrome-connector';
+import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 
 interface TabMapping {
     account: 'A' | 'B';
@@ -20,8 +21,8 @@ export class TabFocusService {
     private connector: ChromeConnector;
     private tabMappings: TabMapping[] = [];
 
-    constructor() {
-        this.connector = new ChromeConnector(9222);
+    constructor(private chromeManager: ChromeConnectionManager) {
+        this.connector = new ChromeConnector(9222, chromeManager);
     }
 
     /**
@@ -88,17 +89,18 @@ export class TabFocusService {
         registeredAccounts: { account: string; provider: string; url: string }[];
         error?: string;
     }> {
-        const health = await checkChromeConnection();
+        const chromeConnected = await this.chromeManager.checkConnection(9222);
+        const tabCount = chromeConnected ? await this.chromeManager.getTabsCount(9222) : 0;
         
         return {
-            chromeConnected: health.connected,
-            tabCount: health.tabs,
+            chromeConnected,
+            tabCount,
             registeredAccounts: this.tabMappings.map(t => ({
                 account: t.account,
                 provider: t.provider,
                 url: t.urlPattern
             })),
-            error: health.error
+            error: chromeConnected ? undefined : 'Chrome not reachable on port 9222'
         };
     }
 
