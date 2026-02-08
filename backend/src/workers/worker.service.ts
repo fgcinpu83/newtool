@@ -32,6 +32,14 @@ import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 // Expanded to include Guardian states
 export type ProviderState = 'INACTIVE' | 'SESSION_BOUND' | 'LIVE' | 'IDLE' | 'RECOVERING' | 'DEAD' | 'HEARTBEAT_ONLY' | 'NO_DATA';
 
+// 🛡️ FINAL FIX: TOGGLE FSM (Atomic State Machine)
+export enum ToggleState {
+    IDLE = 'IDLE',           // No observer, safe state
+    STARTING = 'STARTING',   // Initializing observer, locked
+    RUNNING = 'RUNNING',     // Observer active
+    STOPPING = 'STOPPING'    // Shutting down observer, locked
+}
+
 interface ProviderEntry {
     name: string;
     account: string;
@@ -91,7 +99,9 @@ export class WorkerService implements OnModuleInit {
     private chromeReady: boolean = false;
     private injectedReady: boolean = false;
     private cdpReady: boolean = false;
-    private observerStarted: Record<string, boolean> = { A: false, B: false };
+
+    // 🛡️ FINAL FIX: TOGGLE FSM - Atomic state machine
+    private toggleFsm: Record<string, ToggleState> = { A: ToggleState.IDLE, B: ToggleState.IDLE };
 
     // ─── READINESS FLAG SETTERS ─────────────────────
 
@@ -136,7 +146,7 @@ export class WorkerService implements OnModuleInit {
     // ─── OBSERVER MANAGEMENT ────────────────────────
 
     /** Start observer for account (only called when all flags are ready) */
-    private startObserverForAccount(account: string) {
+    private async startObserverForAccount(account: string): Promise<void> {
         console.log(`[WORKER] 🎯 Starting observer for Account ${account}`);
         
         // The "observer" is essentially enabling data processing for this account
@@ -151,7 +161,7 @@ export class WorkerService implements OnModuleInit {
     }
 
     /** Stop observer for account */
-    private stopObserverForAccount(account: string) {
+    private async stopObserverForAccount(account: string): Promise<void> {
         console.log(`[WORKER] 🛑 Stopping observer for Account ${account}`);
         
         // Stop any active processing for this account
@@ -160,6 +170,94 @@ export class WorkerService implements OnModuleInit {
         this.gateway.sendUpdate('system_log', {
             level: 'info', 
             message: `[OBSERVER] Account ${account} observer stopped`,
+            timestamp: Date.now()
+        });
+    }
+
+    // ─── FSM TOGGLE LOGIC ───────────────────────────
+
+    /** Handle toggle with atomic FSM transitions */
+    private async handleToggleFsm(account: string, active: boolean): Promise<void> {
+        const currentState = this.toggleFsm[account];
+
+        // 🛡️ FSM: Reject operations during transitional states
+        if (currentState === ToggleState.STARTING || currentState === ToggleState.STOPPING) {
+            console.log(`[FSM] 🚫 TOGGLE ${active ? 'ON' : 'OFF'} REJECTED for Account ${account} - In transitional state: ${currentState}`);
+            this.gateway.sendUpdate('system_log', {
+                level: 'warn',
+                message: `[FSM] Toggle ${active ? 'ON' : 'OFF'} rejected for ${account} - In transitional state: ${currentState}`,
+                timestamp: Date.now()
+            });
+            return;
+        }
+
+        if (active) {
+            // TOGGLE ON: Only allowed from IDLE state
+            if (currentState !== ToggleState.IDLE) {
+                console.log(`[FSM] 🚫 TOGGLE ON REJECTED for Account ${account} - Invalid state: ${currentState}`);
+                return;
+            }
+
+            // Check readiness before starting
+            if (!this.chromeReady || !this.injectedReady || !this.cdpReady) {
+                const missing = [];
+                if (!this.chromeReady) missing.push('Chrome');
+                if (!this.injectedReady) missing.push('Injected');
+                if (!this.cdpReady) missing.push('CDP');
+
+                console.log(`[FSM] 🚫 TOGGLE ON REJECTED for Account ${account} - Pipeline not ready: ${missing.join(', ')}`);
+                this.gateway.sendUpdate('system_log', {
+                    level: 'error',
+                    message: `[FSM] Account ${account} toggle ON rejected - Pipeline not ready: ${missing.join(', ')}`,
+                    timestamp: Date.now()
+                });
+                return;
+            }
+
+            // FSM: IDLE → STARTING → RUNNING
+            await this.transitionFsm(account, ToggleState.STARTING);
+            try {
+                await this.startObserverForAccount(account);
+                await this.transitionFsm(account, ToggleState.RUNNING);
+                console.log(`[FSM] ✅ Account ${account} observer started successfully`);
+            } catch (error) {
+                console.error(`[FSM] ❌ Account ${account} observer start failed:`, error);
+                await this.transitionFsm(account, ToggleState.IDLE);
+                throw error;
+            }
+
+        } else {
+            // TOGGLE OFF: Only allowed from RUNNING state
+            if (currentState !== ToggleState.RUNNING) {
+                console.log(`[FSM] 🚫 TOGGLE OFF REJECTED for Account ${account} - Invalid state: ${currentState}`);
+                return;
+            }
+
+            // FSM: RUNNING → STOPPING → IDLE
+            await this.transitionFsm(account, ToggleState.STOPPING);
+            try {
+                await this.stopObserverForAccount(account);
+                await this.transitionFsm(account, ToggleState.IDLE);
+                console.log(`[FSM] ✅ Account ${account} observer stopped successfully`);
+            } catch (error) {
+                console.error(`[FSM] ❌ Account ${account} observer stop failed:`, error);
+                // On stop failure, still transition to IDLE to prevent stuck state
+                await this.transitionFsm(account, ToggleState.IDLE);
+                throw error;
+            }
+        }
+    }
+
+    /** Atomic FSM state transition */
+    private async transitionFsm(account: string, newState: ToggleState): Promise<void> {
+        const oldState = this.toggleFsm[account];
+        this.toggleFsm[account] = newState;
+        
+        console.log(`[FSM] 🔄 Account ${account}: ${oldState} → ${newState}`);
+        this.gateway.sendUpdate('fsm:transition', {
+            account,
+            fromState: oldState,
+            toState: newState,
             timestamp: Date.now()
         });
     }
@@ -258,41 +356,8 @@ export class WorkerService implements OnModuleInit {
                 // 3. Broadcast status
                 this.broadcastStatus();
 
-                // 🛡️ CRITICAL FIX: TOGGLE ON CRASH PREVENTION
-                if (active) {
-                    // Check all readiness flags before allowing toggle ON
-                    if (!this.chromeReady || !this.injectedReady || !this.cdpReady) {
-                        const missing = [];
-                        if (!this.chromeReady) missing.push('Chrome');
-                        if (!this.injectedReady) missing.push('Injected');
-                        if (!this.cdpReady) missing.push('CDP');
-
-                        console.log(`[WORKER] 🚫 TOGGLE ON REJECTED for Account ${account} - Pipeline not ready: ${missing.join(', ')}`);
-                        this.gateway.sendUpdate('system_log', {
-                            level: 'error',
-                            message: `[TOGGLE] Account ${account} toggle ON rejected - Pipeline not ready: ${missing.join(', ')}`,
-                            timestamp: Date.now()
-                        });
-                        return; // Abort toggle ON
-                    }
-
-                    // All flags ready - proceed with observer start
-                    if (!this.observerStarted[account]) {
-                        this.observerStarted[account] = true;
-                        console.log(`[WORKER] ✅ TOGGLE ON ACCEPTED for Account ${account} - Starting observer`);
-                        this.startObserverForAccount(account);
-                    } else {
-                        console.log(`[WORKER] ℹ️ TOGGLE ON IGNORED for Account ${account} - Observer already started`);
-                    }
-                } else {
-                    // Toggle OFF - safe stop
-                    if (this.observerStarted[account]) {
-                        this.observerStarted[account] = false;
-                        console.log(`[WORKER] 🛑 TOGGLE OFF for Account ${account} - Stopping observer`);
-                        this.stopObserverForAccount(account);
-                    }
-                    // NOTE: Do NOT reset readiness flags on toggle OFF unless Chrome truly disconnected
-                }
+                // 🛡️ FINAL FIX: TOGGLE FSM - Atomic state machine transitions
+                await this.handleToggleFsm(account, active);
             }
 
             else if (data.type === 'UPDATE_CONFIG') {
