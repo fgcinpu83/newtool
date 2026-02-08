@@ -220,22 +220,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
             // Clear provider-specific configuration and identifying info for this account in storage
+            // NOTE: Do NOT change accounts[idx].active = false here - that would override UI state
+            // Only clear URL, name, number for cleanup, but preserve UI toggle state
             try {
                 chrome.storage.local.get(['virtualAccounts'], (res) => {
                     try {
                         const accounts = res.virtualAccounts || [];
                         const idx = accounts.findIndex(a => a.id === acc.id);
                         if (idx !== -1) {
+                            // Only clear provider config, NOT the active state (UI toggle)
                             accounts[idx].url = '';
                             accounts[idx].name = '';
                             accounts[idx].number = '';
-                            accounts[idx].active = false;
+                            // accounts[idx].active = false; // REMOVED - Don't override UI state
                             chrome.storage.local.set({ virtualAccounts: accounts }, () => {
                                 if (chrome.runtime.lastError) {
                                     console.error('[AG-DESKTOP] ❌ Storage set error:', chrome.runtime.lastError);
                                     return;
                                 }
-                                console.log('[AG-DESKTOP] 🔄 Cleared provider config for account', acc.id);
+                                console.log('[AG-DESKTOP] 🔄 Cleared provider config for account', acc.id, '(preserved UI state)');
 
                                 // If caller requested a full teardown, perform deeper cleanup
                                 if (msg && msg.clearConfig) {

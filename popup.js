@@ -88,6 +88,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // backend->background notifies UI to refresh lights
             try { initProviderLights(); } catch (e) {}
         }
+        if (message.type === 'SYSTEM_STATUS_UPDATE') {
+            // Update status indicators based on backend system state
+            try { updateSystemStatusIndicators(message.data); } catch (e) {
+                console.error('Error updating system status indicators:', e);
+            }
+        }
     });
 
     // Request initial data update
