@@ -189,15 +189,8 @@ export class WorkerService implements OnModuleInit {
         if (!fs.existsSync(this.wireLogDir)) fs.mkdirSync(this.wireLogDir, { recursive: true });
         this.logger.log(`🏗️ WorkerService v3.1 INITIALIZED (InstanceID: ${this.instanceId})`);
         
-        // 🛡️ CRITICAL FIX: Check Chrome readiness on startup
-        try {
-            const chromeInfoA = await this.chromeManager.attach(9222);
-            const chromeInfoB = await this.chromeManager.attach(9223);
-            this.setChromeReady(chromeInfoA.state === 'CONNECTED' || chromeInfoB.state === 'CONNECTED');
-        } catch (e) {
-            console.error('[WORKER] Chrome readiness check failed:', e.message);
-            this.setChromeReady(false);
-        }
+        // 🛡️ CRITICAL FIX: Chrome readiness will be set when browser automation attaches
+        // Do not check Chrome on startup to avoid launching duplicate browsers
         
         // 🛡️ v11.0: ALWAYS start with accounts OFF and balance 0
         // Do NOT load from Redis - fresh start every time
@@ -225,6 +218,13 @@ export class WorkerService implements OnModuleInit {
         // ðŸ”¥ LISTEN FOR DATA (LEGACY + SESSION)
         this.gateway.commandEvents.on('endpoint_captured', (data) => {
             this.handleEndpointCaptured(data);
+        });
+
+        // 🛡️ Listen for Chrome readiness
+        this.gateway.trafficBus.on('chrome:ready', (data) => {
+            if (data && data.port) {
+                this.setChromeReady(true);
+            }
         });
 
         console.log('[WORKER] Now listening for endpoint_captured events');

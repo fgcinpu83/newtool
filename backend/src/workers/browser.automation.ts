@@ -41,6 +41,8 @@ export class BrowserAutomationService implements OnModuleInit {
         if (infoA.state === 'CONNECTED') {
             this.logger.log(`Chrome detected on port 9222 (${infoA.tabs} tabs)`);
             this.logger.log(`[OBSERVE] Chrome connection stable on port 9222 - ${infoA.tabs} tabs available`);
+            // 🛡️ Notify system that Chrome is ready
+            this.gateway.trafficBus.emit('chrome:ready', { port: 9222, tabs: infoA.tabs });
         } else {
             this.logger.warn(`Chrome NOT detected on port 9222 (state: ${infoA.state}). Run LAUNCH_CHROME.bat first!`);
             this.logger.log(`[OBSERVE] Chrome connection unavailable on port 9222 - state: ${infoA.state}`);
