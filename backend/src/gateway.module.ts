@@ -21,6 +21,9 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     public trafficBus: EventEmitter = new EventEmitter();
     public commandEvents: EventEmitter = new EventEmitter();
 
+    // 🛡️ CDP ISOLATION: Track recent injected events to prevent duplication
+    private recentInjectedEvents: Record<string, number> = {};
+
     constructor(private providerManager: ProviderSessionManager) { }
 
     onModuleInit() {
@@ -77,6 +80,29 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
         if (!actualData || !actualData.url) return;
 
+        // 🛡️ CDP ISOLATION: Prevent duplication between injected and CDP events
+        const eventSource = actualData.source;
+        const eventUrl = actualData.url;
+        const now = Date.now();
+
+        if (eventSource === 'cdp') {
+            // Check if there's a recent injected event for this URL (within 5 seconds)
+            const lastInjected = this.recentInjectedEvents[eventUrl];
+            if (lastInjected && (now - lastInjected) < 5000) {
+                console.log(`[GATEWAY-3001] 🚫 CDP event IGNORED (duplicate of recent injected): ${eventUrl.substring(0, 50)}...`);
+                return; // Ignore this CDP event
+            }
+        } else if (eventSource === 'injected') {
+            // Track injected events for deduplication
+            this.recentInjectedEvents[eventUrl] = now;
+            // Clean up old entries (older than 10 seconds)
+            for (const url in this.recentInjectedEvents) {
+                if (now - this.recentInjectedEvents[url] > 10000) {
+                    delete this.recentInjectedEvents[url];
+                }
+            }
+        }
+
         // 🛡️ v9.5 Client Identity Tagging
         // If actualData contains an account (A/B), tag this socket as an extension for that account
         if (actualData.account && (actualData.account === 'A' || actualData.account === 'B' || actualData.account === 'DESKTOP')) {
@@ -85,7 +111,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
             (client as any).lastSeen = Date.now();
         }
 
-        console.log(`[GATEWAY-3001] 🌊 Stream Ingest: ${actualData.url.substring(0, 50)}... [Acc: ${actualData.account || '?'}]`);
+        console.log(`[GATEWAY-3001] 🌊 Stream Ingest: ${actualData.url.substring(0, 50)}... [Acc: ${actualData.account || '?'}] [Source: ${eventSource || 'unknown'}]`);
 
         // 🔍 DEBUG SENSOR: Log backend data reception
         console.log(`%c[DEBUG-SENSOR] 📡 BACKEND-RECEIVED: ${JSON.stringify({
@@ -96,7 +122,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
             type: actualData.type,
             url: actualData.url?.substring(0, 100),
             dataSize: JSON.stringify(actualData).length,
-            clientId: actualData.clientId
+            clientId: actualData.clientId,
+            source: eventSource
         }, null, 2)}`, 'background:#2196f3;color:#fff;font-weight:bold');
 
         this.trafficBus.emit('stream_data', actualData);

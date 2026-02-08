@@ -23,6 +23,7 @@ const io = require('socket.io-client');
         account: 'A',
         type: 'STREAM_DATA',
         clientId: 'cdp-socketio-forwarder',
+        source: 'cdp', // 🛡️ ISOLATION: Tag CDP events as secondary verification layer
         Matchid: 'cdp',
         ... (typeof payload === 'string' ? { payload: payload } : {})
       };

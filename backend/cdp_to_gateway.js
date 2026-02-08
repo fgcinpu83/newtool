@@ -25,6 +25,7 @@ const WebSocket = require('ws');
           account: 'A',
           type: 'STREAM_DATA',
           clientId: 'cdp-forwarder',
+          source: 'cdp', // 🛡️ ISOLATION: Tag CDP events as secondary verification layer
           payload: payload
         }
       };
