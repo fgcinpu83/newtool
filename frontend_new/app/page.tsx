@@ -200,9 +200,9 @@ export default function Page() {
         setLogs(p => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...p.slice(0, 50)]);
     }, []);
 
-    const playSound = (type: 'success' | 'alert') => {
+    const playSound = useCallback((type: 'success' | 'alert') => {
         if (silentMode) return;
-    };
+    }, [silentMode]);
 
 
     // Register socket event listeners

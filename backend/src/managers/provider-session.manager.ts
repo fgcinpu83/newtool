@@ -108,6 +108,8 @@ export class ProviderSessionManager {
             state: to,
             stateChangedAt: Date.now(),
         });
+
+        this.logger.log(`[OBSERVE] Provider state changed - ID: ${providerId}, ${from} → ${to}, Provider: ${info.providerType}, Account: ${info.account}`);
         this.logger.log(`[${providerId}] ${from} → ${to}`);
     }
 
@@ -128,6 +130,7 @@ export class ProviderSessionManager {
         const info = this.providers.get(providerId);
         if (!info) {
             this.logger.warn(`reportEvent: unknown provider ${providerId}`);
+            this.logger.log(`[OBSERVE] Provider event reported for unknown provider - ID: ${providerId}, Event: ${event}`);
             return this.getInfo(providerId);
         }
 
@@ -139,6 +142,8 @@ export class ProviderSessionManager {
         if (meta?.providerType) extra.providerType = meta.providerType;
         if (meta?.balance) extra.balance = meta.balance;
         if (meta?.errorMessage) extra.errorMessage = meta.errorMessage;
+
+        this.logger.log(`[OBSERVE] Provider state transition - ID: ${providerId}, Current: ${info.state}, Event: ${event}, Provider: ${meta?.providerType || 'unknown'}`);
 
         // ── MANAGER DECISION LOGIC ──────────────────
         switch (event) {

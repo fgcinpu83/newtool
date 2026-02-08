@@ -360,11 +360,13 @@ export class CDPSessionManager {
                 // Monitor for unexpected close → auto-transition to ERROR
                 ws.on('close', () => {
                     this.logger.warn(`[${port}] CDP WebSocket closed unexpectedly`);
+                    this.logger.log(`[OBSERVE] CDP connection lost on port ${port} - stability issue detected`);
                     this.handleSocketClose(port);
                 });
 
                 ws.on('error', (err) => {
                     this.logger.error(`[${port}] CDP WebSocket error: ${err.message}`);
+                    this.logger.log(`[OBSERVE] CDP connection error on port ${port} - ${err.message}`);
                     this.handleSocketError(port, err.message);
                 });
 

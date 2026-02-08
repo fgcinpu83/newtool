@@ -193,6 +193,7 @@ export class ActiveTabManager {
             });
 
             this.logger.log(`[${port}] Active tab selected: "${matched.title}" (${matched.url})`);
+            this.logger.log(`[OBSERVE] ActiveTab selected on port ${port} - URL: ${matched.url}, Title: ${matched.title}`);
             return this.getInfo(port);
 
         } catch (err: any) {
@@ -283,6 +284,7 @@ export class ActiveTabManager {
         });
 
         this.logger.log(`[${port}] Active tab released → NO_TAB`);
+        this.logger.log(`[OBSERVE] ActiveTab released on port ${port} - tab lifecycle event`);
     }
 
     /**
@@ -317,6 +319,7 @@ export class ActiveTabManager {
             errorMessage: null,
         });
         this.logger.log(`[${port}] Force refresh → NO_TAB`);
+        this.logger.log(`[OBSERVE] ActiveTab refresh triggered on port ${port} - possible tab reload detected`);
 
         return this.selectByWhitelist(port);
     }

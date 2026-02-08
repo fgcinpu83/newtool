@@ -186,9 +186,27 @@ function loadAccounts() {
         // Add toggle listeners
         document.querySelectorAll('.acc-toggle').forEach(chk => {
             chk.addEventListener('change', (e) => {
-                const id = parseInt(e.target.dataset.id);
-                const active = e.target.checked;
-                toggleAccount(id, active);
+                try {
+                    const id = parseInt(e.target.dataset.id);
+                    if (isNaN(id)) {
+                        console.error('Invalid account ID:', e.target.dataset.id);
+                        // Reset checkbox state
+                        e.target.checked = !e.target.checked;
+                        return;
+                    }
+                    const active = e.target.checked;
+                    console.log('Toggle clicked:', { id, active, element: e.target });
+
+                    // Prevent rapid clicking
+                    e.target.disabled = true;
+                    setTimeout(() => e.target.disabled = false, 1000);
+
+                    toggleAccount(id, active);
+                } catch (error) {
+                    console.error('Error in toggle event handler:', error);
+                    // Reset checkbox on error
+                    e.target.checked = !e.target.checked;
+                }
             });
         });
 
@@ -216,32 +234,100 @@ function deleteAccount(id) {
 }
 
 function toggleAccount(id, active) {
-    chrome.storage.local.get(['virtualAccounts'], (result) => {
-        const accounts = result.virtualAccounts || [];
-        const idx = accounts.findIndex(a => a.id === id);
-        if (idx === -1) return;
-        accounts[idx].active = !!active;
-        // If toggled OFF, clear provider configuration and identifying info for this account to fully reset
-        if (!accounts[idx].active) {
-            accounts[idx].url = '';
-            accounts[idx].name = '';
-            accounts[idx].number = '';
-            // Clear provider status lights for this account
-            chrome.storage.local.get(['providerStatuses'], (res) => {
-                const s = res.providerStatuses || {};
-                delete s[id];
-                chrome.storage.local.set({ providerStatuses: s });
-            });
-        }
+    console.log('toggleAccount called:', { id, active, type: typeof id });
 
-        chrome.storage.local.set({ virtualAccounts: accounts }, () => {
-            // Notify background of toggle change; include clearConfig flag when deactivating
-            try {
-                chrome.runtime.sendMessage({ type: 'ACCOUNT_TOGGLE', account: accounts[idx], active: !!active, clearConfig: !accounts[idx].active });
-            } catch (e) {}
-            loadAccounts();
-        });
+    if (typeof id !== 'number' || isNaN(id)) {
+        console.error('Invalid account ID in toggleAccount:', id);
+        // Reset UI state
+        loadAccounts();
+        return;
+    }
+
+    // Store original state for rollback
+    let originalAccounts = null;
+
+    chrome.storage.local.get(['virtualAccounts'], (result) => {
+        try {
+            const accounts = result.virtualAccounts || [];
+            originalAccounts = JSON.parse(JSON.stringify(accounts)); // Deep copy
+            console.log('Loaded accounts:', accounts.length);
+
+            const idx = accounts.findIndex(a => a.id === id);
+            if (idx === -1) {
+                console.error('Account not found:', id);
+                loadAccounts(); // Reset UI
+                return;
+            }
+
+            console.log('Toggling account:', accounts[idx].name, 'from', accounts[idx].active, 'to', active);
+            accounts[idx].active = !!active;
+
+            chrome.storage.local.set({ virtualAccounts: accounts }, () => {
+                if (chrome.runtime.lastError) {
+                    console.error('Storage set error:', chrome.runtime.lastError);
+                    // Rollback on storage error
+                    if (originalAccounts) {
+                        chrome.storage.local.set({ virtualAccounts: originalAccounts }, () => {
+                            loadAccounts();
+                        });
+                    }
+                    return;
+                }
+
+                console.log('Account state saved, sending message to background');
+
+                // Notify background of toggle change; include clearConfig flag when deactivating
+                try {
+                    chrome.runtime.sendMessage(
+                        { type: 'ACCOUNT_TOGGLE', account: accounts[idx], active: !!active, clearConfig: !active },
+                        (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.error('SendMessage error:', chrome.runtime.lastError);
+                                // Rollback on message error
+                                if (originalAccounts) {
+                                    chrome.storage.local.set({ virtualAccounts: originalAccounts }, () => {
+                                        loadAccounts();
+                                    });
+                                }
+                                return;
+                            }
+
+                            if (response && response.success) {
+                                console.log('Background toggle successful:', response);
+                            } else {
+                                console.error('Background toggle failed:', response);
+                                // Rollback on background error
+                                if (originalAccounts) {
+                                    chrome.storage.local.set({ virtualAccounts: originalAccounts }, () => {
+                                        loadAccounts();
+                                    });
+                                }
+                            }
+                        }
+                    );
+                } catch (e) {
+                    console.error('Failed to send ACCOUNT_TOGGLE message:', e);
+                    // Rollback on send error
+                    if (originalAccounts) {
+                        chrome.storage.local.set({ virtualAccounts: originalAccounts }, () => {
+                            loadAccounts();
+                        });
+                    }
+                }
+
+                loadAccounts();
+            });
+        } catch (error) {
+            console.error('Error in toggleAccount storage callback:', error);
+            // Rollback on any error
+            if (originalAccounts) {
+                chrome.storage.local.set({ virtualAccounts: originalAccounts }, () => {
+                    loadAccounts();
+                });
+            }
+        }
     });
+}
 
 // Initialize provider lights for each account after render
 function initProviderLights() {

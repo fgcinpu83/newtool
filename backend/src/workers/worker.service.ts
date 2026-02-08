@@ -255,7 +255,10 @@ export class WorkerService implements OnModuleInit {
                             const balance = afbBal || isportBal;
                             if (balance) {
                                 console.log('[EXT-SCRAPE] Found balance:', balance);
+                                console.log(\`[OBSERVE] Balance visibility confirmed - value: \${balance}\`);
                                 // This would normally be sent via sniffer
+                            } else {
+                                console.log('[OBSERVE] Balance visibility check failed - no DOM selectors found');
                             }
                         } catch(e) {}
                     })()
@@ -942,6 +945,7 @@ export class WorkerService implements OnModuleInit {
                     const matches = parseProvider('AFB88', payload as any);
                     parsedResult = { odds: matches || [], balance: null };
                     if (!parsedResult.odds || parsedResult.odds.length === 0) {
+                        console.log(`[OBSERVE] Odds parsing failed for AFB88 - no odds extracted from payload`);
                         parsedResult = parseAfbPacket(payload);
                     }
                 } catch (err) {
@@ -965,6 +969,7 @@ export class WorkerService implements OnModuleInit {
                     const matches = parseProvider('SABA', payload as any);
                     parsedResult = { odds: matches || [], balance: null };
                     if (!parsedResult.odds || parsedResult.odds.length === 0) {
+                        console.log(`[OBSERVE] Odds parsing failed for SABA - attempting fallback parsers`);
                         if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] !== 'object') {
                             parsedResult = parseAfbPacket(payload);
                         } else {
@@ -1007,6 +1012,7 @@ export class WorkerService implements OnModuleInit {
                 
                 const streamMsg = `[STREAM] 🌊 Processed ${parsedResult.odds.length} odds for ${regKey}`;
                 console.log(streamMsg);
+                console.log(`[OBSERVE] Odds visibility confirmed - ${parsedResult.odds.length} odds processed for ${regKey}`);
                 try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${streamMsg}\n`); } catch (e) { }
                 await this.processOddsBatch(account, verifiedProvider, parsedResult.odds, data.clientId);
             }

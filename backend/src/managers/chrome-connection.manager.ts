@@ -102,11 +102,13 @@ export class ChromeConnectionManager {
         // Idempotent: already connected or connecting → return
         if (info.state === 'CONNECTED' || info.state === 'CONNECTING') {
             this.logger.log(`[${port}] attach() idempotent — already ${info.state}`);
+            this.logger.log(`[OBSERVE] Chrome connection stable - port ${port} already ${info.state}`);
             return info;
         }
 
         // Transition: DISCONNECTED/ERROR → CONNECTING
         this.transition(port, 'CONNECTING');
+        this.logger.log(`[OBSERVE] Chrome connection attempt - port ${port} transitioning to CONNECTING`);
 
         try {
             // STEP 3.1: Ensure Chrome process is running before probing CDP
@@ -133,6 +135,7 @@ export class ChromeConnectionManager {
                 errorMessage: undefined,
             });
 
+            this.logger.log(`[OBSERVE] Chrome connection successful - port ${port} connected with ${tabs} tabs`);
             return this.getInfo(port);
         } catch (err: any) {
             this.transition(port, 'ERROR', {
@@ -140,6 +143,7 @@ export class ChromeConnectionManager {
                 lastChecked: Date.now(),
                 attachedAt: undefined,
             });
+            this.logger.log(`[OBSERVE] Chrome connection failed - port ${port} error: ${err.message}`);
             return this.getInfo(port);
         }
     }

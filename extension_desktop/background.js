@@ -153,62 +153,151 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // Account toggle handler: inject when active=true, remove/close when false
     if (msg?.type === 'ACCOUNT_TOGGLE' && msg.account) {
-        const acc = msg.account;
-        const active = !!msg.active;
-        if (active) {
-            // Inject into matching open tabs
-            chrome.tabs.query({}, (tabs) => {
-                tabs.forEach((t) => {
+        try {
+            const acc = msg.account;
+            const active = !!msg.active;
+            console.log('[AG-DESKTOP] 🔄 ACCOUNT_TOGGLE received:', { id: acc.id, active, url: acc.url, clearConfig: msg.clearConfig });
+
+            if (active) {
+                // Inject into matching open tabs
+                chrome.tabs.query({}, (tabs) => {
                     try {
-                        if (t.url && acc.url && t.url.toLowerCase().indexOf((acc.url || '').toLowerCase()) !== -1) {
-                                try { ensureInjected(t.id); } catch (e) {}
-                                activeTabs.set(t.id, { accountId: acc.id, account: acc.id, url: t.url });
-                        }
-                    } catch (e) {}
+                        console.log('[AG-DESKTOP] 📋 Found tabs for injection:', tabs.length);
+                        let injectedCount = 0;
+
+                        tabs.forEach((t) => {
+                            try {
+                                if (t.url && acc.url && t.url.toLowerCase().indexOf((acc.url || '').toLowerCase()) !== -1) {
+                                    console.log('[AG-DESKTOP] 🎯 Injecting into tab:', t.id, t.url);
+                                    try {
+                                        ensureInjected(t.id);
+                                        activeTabs.set(t.id, { accountId: acc.id, account: acc.id, url: t.url });
+                                        injectedCount++;
+                                    } catch (e) {
+                                        console.error('[AG-DESKTOP] ❌ ensureInjected failed for tab', t.id, e);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('[AG-DESKTOP] ❌ Tab processing error:', e);
+                            }
+                        });
+
+                        console.log('[AG-DESKTOP] ✅ Injection complete, injected into', injectedCount, 'tabs');
+                        sendResponse({ success: true, injected: injectedCount });
+                    } catch (error) {
+                        console.error('[AG-DESKTOP] ❌ Tab query error:', error);
+                        sendResponse({ success: false, error: error.message });
+                    }
                 });
-            });
-        } else {
-            // Deactivate: teardown injected scripts in associated tabs and clear stored provider config
-            for (const [tabId, info] of Array.from(activeTabs.entries())) {
-                if (info && info.accountId === acc.id) {
-                    try {
-                        // Instruct content script to forward teardown to page context
-                        chrome.tabs.sendMessage(tabId, { type: 'TEARDOWN_INJECTION', accountId: acc.id }).catch(() => {});
-                    } catch (e) {}
-                    // Unregister tab from active tracking
-                    activeTabs.delete(tabId);
+                return true; // Will respond asynchronously
+            } else {
+                console.log('[AG-DESKTOP] 🔄 Deactivating account', acc.id);
+                // Deactivate: teardown injected scripts in associated tabs and clear stored provider config
+                let teardownCount = 0;
+                for (const [tabId, info] of Array.from(activeTabs.entries())) {
+                    if (info && info.accountId === acc.id) {
+                        try {
+                            console.log('[AG-DESKTOP] 🧹 Tearing down injection for tab', tabId);
+                            // Instruct content script to forward teardown to page context
+                            chrome.tabs.sendMessage(tabId, { type: 'TEARDOWN_INJECTION', accountId: acc.id }).catch(() => {});
+                            teardownCount++;
+                        } catch (e) {
+                            console.error('[AG-DESKTOP] ❌ Teardown message failed for tab', tabId, e);
+                        }
+                        // Unregister tab from active tracking
+                        activeTabs.delete(tabId);
+                    }
                 }
+
+                console.log('[AG-DESKTOP] ✅ Teardown complete for', teardownCount, 'tabs');
+                sendResponse({ success: true, teardown: teardownCount });
             }
+        } catch (error) {
+            console.error('[AG-DESKTOP] ❌ ACCOUNT_TOGGLE error:', error);
+            sendResponse({ success: false, error: error.message });
+        }
+        return true;
+    }
 
             // Clear provider-specific configuration and identifying info for this account in storage
             try {
                 chrome.storage.local.get(['virtualAccounts'], (res) => {
-                    const accounts = res.virtualAccounts || [];
-                    const idx = accounts.findIndex(a => a.id === acc.id);
-                    if (idx !== -1) {
-                        accounts[idx].url = '';
-                        accounts[idx].name = '';
-                        accounts[idx].number = '';
-                        accounts[idx].active = false;
-                        chrome.storage.local.set({ virtualAccounts: accounts }, () => {
-                            console.log('[AG-DESKTOP] 🔄 Cleared provider config for account', acc.id);
-                            // If caller requested a full teardown, perform deeper cleanup
-                            try {
+                    try {
+                        const accounts = res.virtualAccounts || [];
+                        const idx = accounts.findIndex(a => a.id === acc.id);
+                        if (idx !== -1) {
+                            accounts[idx].url = '';
+                            accounts[idx].name = '';
+                            accounts[idx].number = '';
+                            accounts[idx].active = false;
+                            chrome.storage.local.set({ virtualAccounts: accounts }, () => {
+                                if (chrome.runtime.lastError) {
+                                    console.error('[AG-DESKTOP] ❌ Storage set error:', chrome.runtime.lastError);
+                                    return;
+                                }
+                                console.log('[AG-DESKTOP] 🔄 Cleared provider config for account', acc.id);
+
+                                // If caller requested a full teardown, perform deeper cleanup
                                 if (msg && msg.clearConfig) {
-                                    // Clear providerStatuses for this account
-                                    chrome.storage.local.get(['providerStatuses'], (r2) => {
-                                        const s = r2.providerStatuses || {};
-                                        try { delete s[String(acc.id)]; } catch (e) {}
-                                        chrome.storage.local.set({ providerStatuses: s }, () => {
-                                            console.log('[AG-DESKTOP] 🧹 providerStatuses entry removed for', acc.id);
+                                    try {
+                                        // Clear providerStatuses for this account
+                                        chrome.storage.local.get(['providerStatuses'], (r2) => {
+                                            try {
+                                                const s = r2.providerStatuses || {};
+                                                delete s[String(acc.id)];
+                                                chrome.storage.local.set({ providerStatuses: s }, () => {
+                                                    if (chrome.runtime.lastError) {
+                                                        console.error('[AG-DESKTOP] ❌ providerStatuses clear error:', chrome.runtime.lastError);
+                                                        return;
+                                                    }
+                                                    console.log('[AG-DESKTOP] 🧹 providerStatuses entry removed for', acc.id);
+                                                });
+                                            } catch (e) {
+                                                console.error('[AG-DESKTOP] ❌ providerStatuses processing error:', e);
+                                            }
                                         });
-                                    });
 
-                                    // Clear cached SABA token and related storage keys
-                                    cachedSabaToken = null;
-                                    try { chrome.storage.local.remove([SABA_TOKEN_KEY, SABA_TOKEN_TIMESTAMP_KEY, 'activeProvider']); } catch (e) {}
+                                        // Clear cached SABA token and related storage keys
+                                        cachedSabaToken = null;
+                                        try {
+                                            chrome.storage.local.remove([SABA_TOKEN_KEY, SABA_TOKEN_TIMESTAMP_KEY, 'activeProvider'], () => {
+                                                if (chrome.runtime.lastError) {
+                                                    console.error('[AG-DESKTOP] ❌ Storage remove error:', chrome.runtime.lastError);
+                                                }
+                                            });
+                                        } catch (e) {
+                                            console.error('[AG-DESKTOP] ❌ Token cleanup error:', e);
+                                        }
 
-                                    // Close offscreen document if present
+                                        // Close offscreen document if present
+                                        try {
+                                            if (offscreenCreated && chrome.offscreen && chrome.offscreen.closeDocument) {
+                                                chrome.offscreen.closeDocument().then(() => {
+                                                    offscreenCreated = false;
+                                                    console.log('[AG-DESKTOP] 📄 Offscreen document closed');
+                                                }).catch((e) => {
+                                                    console.error('[AG-DESKTOP] ❌ Offscreen close error:', e);
+                                                });
+                                            }
+                                        } catch (e) {
+                                            console.error('[AG-DESKTOP] ❌ Offscreen cleanup error:', e);
+                                        }
+
+                                    } catch (e) {
+                                        console.error('[AG-DESKTOP] ❌ Deep cleanup error:', e);
+                                    }
+                                }
+                            });
+                        } else {
+                            console.warn('[AG-DESKTOP] ⚠️ Account not found for cleanup:', acc.id);
+                        }
+                    } catch (error) {
+                        console.error('[AG-DESKTOP] ❌ Account cleanup error:', error);
+                    }
+                });
+            } catch (error) {
+                console.error('[AG-DESKTOP] ❌ Storage get error:', error);
+            }
                                     try {
                                         if (offscreenCreated && chrome.offscreen && chrome.offscreen.closeDocument) {
                                             chrome.offscreen.closeDocument().then(() => {
@@ -292,6 +381,7 @@ async function getInjectedCode() {
 // inject its contents inline into the top frame as a fallback.
 async function ensureInjected(tabId) {
     try {
+        console.log('[AG-DESKTOP] 🔧 Starting injection for tab', tabId);
         // First attempt: inject by adding <script src="..."> into all frames
         await chrome.scripting.executeScript({
             target: { tabId: tabId, allFrames: true },
@@ -316,11 +406,18 @@ async function ensureInjected(tabId) {
                 });
 
                 const injectedTop = Array.isArray(results) ? results.some(r => r && r.result) : (results && results.result);
-                if (injectedTop) return;
+                if (injectedTop) {
+                    console.log('[AG-DESKTOP] ✅ Injection successful for tab', tabId);
+                    return;
+                }
 
+                console.log('[AG-DESKTOP] ⚠️ File injection failed, trying fallback for tab', tabId);
                 // Fallback: inline injection of script text into top frame
                 const code = await getInjectedCode();
-                if (!code) return;
+                if (!code) {
+                    console.error('[AG-DESKTOP] ❌ No injected code available for fallback');
+                    return;
+                }
 
                 await chrome.scripting.executeScript({
                     target: { tabId: tabId, allFrames: false },
@@ -335,12 +432,13 @@ async function ensureInjected(tabId) {
                     },
                     args: [code]
                 });
+                console.log('[AG-DESKTOP] ✅ Fallback injection successful for tab', tabId);
             } catch (e) {
-                console.warn('[AG-DESKTOP] ⚠️ verify/fallback injection failed', e);
+                console.warn('[AG-DESKTOP] ⚠️ verify/fallback injection failed for tab', tabId, e);
             }
         }, 400);
     } catch (e) {
-        console.warn('[AG-DESKTOP] ⚠️ ensureInjected failed', e);
+        console.warn('[AG-DESKTOP] ⚠️ ensureInjected failed for tab', tabId, e);
     }
 }
 
