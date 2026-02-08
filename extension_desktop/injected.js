@@ -3,7 +3,7 @@
  * ==================================================
  * MODE: PASSIVE SENSOR (Raw Metadata Stream)
  * ARCHITECTURE: Constitution v3.1
- * 
+ *
  * 🔒 CONSTITUTIONAL PRINCIPLE:
  * - Extension BUKAN aktor.
  * - Extension tidak memiliki intelligence (No provider detection).
@@ -24,13 +24,15 @@
     }
 })();
 
-(function () {
-    // 🛡️ v7.1 GLOBAL INJECTION FLAG - Prevent double injection on page refresh
-    if (window.__GRAVITY_SNIFFER_INJECTED__) {
+// 🛡️ ISOLATED INJECTION MODULE - Single-run guard with Symbol
+(function() {
+    // Single-run guard using Symbol (not window property)
+    const INJECTION_GUARD = Symbol('GRAVITY_SNIFFER_INJECTED');
+    if (window[INJECTION_GUARD]) {
         console.log('%c[GRAVITY-SNIFFER] ⚠️ Already injected, skipping duplicate', 'color:#ff0');
         return;
     }
-    window.__GRAVITY_SNIFFER_INJECTED__ = true;
+    window[INJECTION_GUARD] = true;
 
     console.log(`%c[GRAVITY-SNIFFER] 📡 PASSIVE SENSOR MODE ACTIVE (v7.1) | Frame: ${window.self !== window.top ? 'IFRAME' : 'TOP'} | URL: ${location.href}`, 'background:#000;color:#0f0;font-size:14px;font-weight:bold');
 
@@ -326,9 +328,195 @@
             responseBody: data.responseBody,
             headers: data.headers || {}, // Captured if possible
             status: data.status,
+            source: 'injected', // 🛡️ ISOLATION: Tag all payloads from injected hooks
             capturedAt: Date.now()
         }, '*');
     }
+
+    // 🛡️ ISOLATED NETWORK INTERCEPTION MODULE
+    // Encapsulated within IIFE to prevent global pollution and ensure single-run execution
+    (function() {
+        // Single-run guard using closure (no global pollution)
+        let interceptionActive = false;
+        if (interceptionActive) return;
+        interceptionActive = true;
+
+        console.log('%c[NETWORK-INTERCEPTION] 🔒 Isolated module initialized', 'background:#000;color:#0f0;font-weight:bold');
+
+        // 🛡️ v7.0 CONSOLIDATED NETWORK INTERCEPTION
+        // 1. XHR HIJACK
+        try {
+            const originalXHROpen = XMLHttpRequest.prototype.open;
+            const originalXHRSend = XMLHttpRequest.prototype.send;
+            const originalXHRSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+            const xhrData = new WeakMap();
+
+            XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+                xhrData.set(this, { method, url, headers: {} });
+                return originalXHROpen.apply(this, [method, url, ...rest]);
+            };
+
+            XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+                const data = xhrData.get(this);
+                if (data) data.headers[name] = value;
+                return originalXHRSetHeader.apply(this, arguments);
+            };
+
+            XMLHttpRequest.prototype.send = function (body) {
+                const data = xhrData.get(this) || { url: '' };
+                data.requestBody = body;
+
+                // 🔥 DEBUG: Log ALL XHR requests
+                console.log(`%c[DEBUG-XHR] 📡 XHR Intercepted: ${data.url.substring(0, 80)} | Method: ${data.method}`, 'color:#ff0;font-weight:bold');
+
+                this.addEventListener('load', function () {
+                    try {
+                        const url = data.url || '';
+                        const responseBody = (this.responseType === '' || this.responseType === 'text') ? this.responseText : (this.responseType === 'json' ? JSON.stringify(this.response) : null);
+
+                        // 🔥 v7.9: LOG ALL XHR for debugging AFB88
+                        const isAfbFrame = location.href.includes('jps9') || location.href.includes('afb') || location.href.includes('mpo') || location.href.includes('prosportslive');
+                        if (isAfbFrame) {
+                            console.log(`%c[XHR-AFB88] 📡 ${url.substring(0, 100)} | Size: ${(responseBody || '').length}`, 'color:#0ff;font-weight:bold');
+                        } else {
+                            console.log(`%c[XHR-SNIFFER] 📡 Intercepted: ${url.substring(0, 80)} | Size: ${(responseBody || '').length}`, 'color:#888');
+                        }
+
+                        if (responseBody && isSabaMatchData(responseBody, url)) {
+                            console.log(`%c[DATA-CAPTURE] 🎯 MATCH FOUND! Processing: ${url.substring(0, 60)}`, 'background:#0f0;color:#fff;font-weight:bold');
+                            lastNetworkBTime = Date.now();
+                            shadowOverrideActive = false;
+
+                            // 🔥 v7.8: Use Universal Parser
+                            interceptAndParseSaba(url, responseBody);
+                        } else if (responseBody) {
+                            console.log(`%c[DATA-SKIP] ⏭️ No match for: ${url.substring(0, 60)} | Size: ${responseBody.length}`, 'color:#666');
+                        }
+                    } catch (e) {
+                        console.error('[XHR-ERROR]', e);
+                    }
+                });
+
+                // 🚀 STRESS-TEST: XHR Latency Simulation
+                const self = this;
+                const args = arguments;
+                if (SNIFFER_STATE.latencyMax > 0) {
+                    const delay = Math.floor(Math.random() * (SNIFFER_STATE.latencyMax - SNIFFER_STATE.latencyMin)) + SNIFFER_STATE.latencyMin;
+                    setTimeout(() => {
+                        originalXHRSend.apply(self, args);
+                    }, delay);
+                } else {
+                    originalXHRSend.apply(self, args);
+                }
+            };
+            console.log('%c[v7.0] 🔌 XHR Interception ACTIVE', 'color:#0f0;font-weight:bold');
+        } catch (e) { console.error('[v7.0] XHR Hijack Error:', e); }
+
+        // 2. FETCH HIJACK
+        try {
+            const originalFetch = window.fetch;
+            window.fetch = async function (resource, config) {
+                // 🚀 STRESS-TEST: Fetch Latency Simulation
+                await applyLatency();
+
+                const url = (typeof resource === 'string') ? resource : (resource.url || '');
+
+                // 🔥 v7.7: VERBOSE DEBUGGING
+                console.log(`%c[FETCH-SNIFFER] 📡 Intercepted: ${url.substring(0, 80)}`, 'color:#888');
+
+                const response = await originalFetch.apply(this, arguments);
+
+                try {
+                    const clone = response.clone();
+                    const text = await clone.text();
+                    console.log(`%c[FETCH-RESPONSE] 📨 Response: ${url.substring(0, 60)} | Size: ${text.length}`, 'color:#0ff');
+
+                    if (isSabaMatchData(text, url)) {
+                        console.log(`%c[DATA-CAPTURE] 🎯 FETCH MATCH FOUND! Processing: ${url.substring(0, 60)}`, 'background:#0f0;color:#fff;font-weight:bold');
+                        // 🔥 v7.8: Use Universal Parser
+                        interceptAndParseSaba(url, text);
+                    } else {
+                        console.log(`%c[DATA-SKIP] ⏭️ FETCH No match for: ${url.substring(0, 60)} | Size: ${text.length}`, 'color:#666');
+                    }
+                } catch (e) {
+                    console.error('[FETCH-ERROR]', e);
+                }
+                return response;
+            };
+            console.log('%c[v7.0] 📡 Fetch Interception ACTIVE', 'color:#0f0;font-weight:bold');
+        } catch (e) { console.error('[v7.0] Fetch Hijack Error:', e); }
+
+        // ============================================================
+        // 🛡️ v6.1 WEBSOCKET INTERCEPTION WITH AFB88 + SABA PRIORITY
+        // ============================================================
+        try {
+            const NativeWebSocket = window.WebSocket;
+            if (NativeWebSocket) {
+                window.WebSocket = function (...args) {
+                    const socket = new NativeWebSocket(...args);
+                    const wsUrl = args[0];
+
+                    // 🛡️ v9.6: Skip local/backend WebSocket traffic
+                    const isLocalWs = wsUrl.includes('localhost') || wsUrl.includes('127.0.0.1') || wsUrl.includes(':8080') || wsUrl.includes(':3001');
+                    if (isLocalWs) {
+                        console.log(`%c[WS-CONNECT] 🚫 Skipping local WebSocket: ${wsUrl}`, 'color:#888');
+                        return socket;
+                    }
+
+                    console.log(`%c[WS-CONNECT] 🔌 WebSocket opened: ${wsUrl}`, 'color:#0ff;font-weight:bold');
+
+                    socket.addEventListener('message', async function (event) {
+                        try {
+                            const originalPayload = event.data;
+                            console.log(`%c[WS-MESSAGE] 📨 Received ${originalPayload.length} bytes from ${wsUrl.substring(0, 50)}`, 'color:#ff0');
+
+                            // Langkah 2: Patch Listener (Injection Point)
+                            const cleanData = await safeDecodePayload(originalPayload);
+                            console.log(`%c[WS-DECODED] 📦 Decoded ${cleanData.length} chars from ${wsUrl.substring(0, 50)}`, 'color:#0ff');
+
+                            if (isSabaMatchData(cleanData, wsUrl)) {
+                                console.log(`%c[DATA-CAPTURE] 🎯 WS MATCH FOUND! Processing: ${wsUrl.substring(0, 50)}`, 'background:#0f0;color:#fff;font-weight:bold');
+                                lastNetworkBTime = Date.now();
+                                shadowOverrideActive = false;
+
+                                // Langkah 3: Proteksi Regex (Anti-Crash)
+                                await interceptAndParseSaba(wsUrl, cleanData);
+                            } else {
+                                console.log(`%c[DATA-SKIP] ⏭️ WS No match for: ${wsUrl.substring(0, 50)} | Size: ${cleanData.length}`, 'color:#666');
+
+                                // 🛡️ v7.10: FORCE CAPTURE for AFB domains - send everything
+                                const isAfbWs = wsUrl.includes('afb') || wsUrl.includes('jps9') || wsUrl.includes('prosportslive');
+                                if (isAfbWs && typeof cleanData === 'string' && cleanData.length > 10) {
+                                    console.log(`%c[WS-AFB-FORCE] 📡 Capturing all data from ${wsUrl.substring(0, 50)}`, 'color:#ff0;font-weight:bold');
+                                    await interceptAndParseSaba(wsUrl, cleanData);
+                                } else if (typeof cleanData === 'string' && cleanData.length > 50) {
+                                    // console.log(`[WS-CLEAN] Received unexpected data from ${wsUrl}`);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('[WS-LISTENER-ERROR]', e);
+                        }
+                    });
+
+                    return socket;
+                };
+                window.WebSocket.prototype = NativeWebSocket.prototype;
+                window.WebSocket.CONNECTING = NativeWebSocket.CONNECTING;
+                window.WebSocket.OPEN = NativeWebSocket.OPEN;
+                window.WebSocket.CLOSING = NativeWebSocket.CLOSING;
+                window.WebSocket.CLOSED = NativeWebSocket.CLOSED;
+
+                console.log('%c[v6.1] 🔌 WEBSOCKET HIJACKED for AFB88 + SABA capture', 'color:#0f0;font-weight:bold');
+            }
+        } catch (e) {
+            console.error('[v6.1] WebSocket hijack failed:', e);
+        }
+
+        // 🛡️ v6.1: Log injection success
+        console.log('%c[v6.1] 🚀 AGGRESSIVE PIPE RECONSTRUCTION ACTIVE', 'background:#000;color:#0f0;font-size:16px;font-weight:bold');
+        console.log('%c[v6.1] 📡 AFB88 + SABA WebSocket + XHR + Fetch interception enabled', 'color:#0ff');
+
+    })(); // End of isolated network interception module
 
     // ============================================================
     // 🛡️ v6.0 SURGICAL NETWORK INJECTION
@@ -748,178 +936,6 @@
 
         return SNIFFER_STATE.sabaKeywords.some(kw => lowerText.includes(kw.toLowerCase()));
     }
-
-    // 🛡️ v7.0 CONSOLIDATED NETWORK INTERCEPTION
-    // 1. XHR HIJACK
-    try {
-        const originalXHROpen = XMLHttpRequest.prototype.open;
-        const originalXHRSend = XMLHttpRequest.prototype.send;
-        const originalXHRSetHeader = XMLHttpRequest.prototype.setRequestHeader;
-        const xhrData = new WeakMap();
-
-        XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-            xhrData.set(this, { method, url, headers: {} });
-            return originalXHROpen.apply(this, [method, url, ...rest]);
-        };
-
-        XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
-            const data = xhrData.get(this);
-            if (data) data.headers[name] = value;
-            return originalXHRSetHeader.apply(this, arguments);
-        };
-
-        XMLHttpRequest.prototype.send = function (body) {
-            const data = xhrData.get(this) || { url: '' };
-            data.requestBody = body;
-
-            // 🔥 DEBUG: Log ALL XHR requests
-            console.log(`%c[DEBUG-XHR] 📡 XHR Intercepted: ${data.url.substring(0, 80)} | Method: ${data.method}`, 'color:#ff0;font-weight:bold');
-
-            this.addEventListener('load', function () {
-                try {
-                    const url = data.url || '';
-                    const responseBody = (this.responseType === '' || this.responseType === 'text') ? this.responseText : (this.responseType === 'json' ? JSON.stringify(this.response) : null);
-
-                    // 🔥 v7.9: LOG ALL XHR for debugging AFB88
-                    const isAfbFrame = location.href.includes('jps9') || location.href.includes('afb') || location.href.includes('mpo') || location.href.includes('prosportslive');
-                    if (isAfbFrame) {
-                        console.log(`%c[XHR-AFB88] 📡 ${url.substring(0, 100)} | Size: ${(responseBody || '').length}`, 'color:#0ff;font-weight:bold');
-                    } else {
-                        console.log(`%c[XHR-SNIFFER] 📡 Intercepted: ${url.substring(0, 80)} | Size: ${(responseBody || '').length}`, 'color:#888');
-                    }
-
-                    if (responseBody && isSabaMatchData(responseBody, url)) {
-                        console.log(`%c[DATA-CAPTURE] 🎯 MATCH FOUND! Processing: ${url.substring(0, 60)}`, 'background:#0f0;color:#fff;font-weight:bold');
-                        lastNetworkBTime = Date.now();
-                        shadowOverrideActive = false;
-
-                        // 🔥 v7.8: Use Universal Parser
-                        interceptAndParseSaba(url, responseBody);
-                    } else if (responseBody) {
-                        console.log(`%c[DATA-SKIP] ⏭️ No match for: ${url.substring(0, 60)} | Size: ${responseBody.length}`, 'color:#666');
-                    }
-                } catch (e) {
-                    console.error('[XHR-ERROR]', e);
-                }
-            });
-
-            // 🚀 STRESS-TEST: XHR Latency Simulation
-            const self = this;
-            const args = arguments;
-            if (SNIFFER_STATE.latencyMax > 0) {
-                const delay = Math.floor(Math.random() * (SNIFFER_STATE.latencyMax - SNIFFER_STATE.latencyMin)) + SNIFFER_STATE.latencyMin;
-                setTimeout(() => {
-                    originalXHRSend.apply(self, args);
-                }, delay);
-            } else {
-                originalXHRSend.apply(self, args);
-            }
-        };
-        console.log('%c[v7.0] 🔌 XHR Interception ACTIVE', 'color:#0f0;font-weight:bold');
-    } catch (e) { console.error('[v7.0] XHR Hijack Error:', e); }
-
-    // 2. FETCH HIJACK
-    try {
-        const originalFetch = window.fetch;
-        window.fetch = async function (resource, config) {
-            // 🚀 STRESS-TEST: Fetch Latency Simulation
-            await applyLatency();
-
-            const url = (typeof resource === 'string') ? resource : (resource.url || '');
-
-            // 🔥 v7.7: VERBOSE DEBUGGING
-            console.log(`%c[FETCH-SNIFFER] 📡 Intercepted: ${url.substring(0, 80)}`, 'color:#888');
-
-            const response = await originalFetch.apply(this, arguments);
-
-            try {
-                const clone = response.clone();
-                const text = await clone.text();
-                console.log(`%c[FETCH-RESPONSE] 📨 Response: ${url.substring(0, 60)} | Size: ${text.length}`, 'color:#0ff');
-
-                if (isSabaMatchData(text, url)) {
-                    console.log(`%c[DATA-CAPTURE] 🎯 FETCH MATCH FOUND! Processing: ${url.substring(0, 60)}`, 'background:#0f0;color:#fff;font-weight:bold');
-                    // 🔥 v7.8: Use Universal Parser
-                    interceptAndParseSaba(url, text);
-                } else {
-                    console.log(`%c[DATA-SKIP] ⏭️ FETCH No match for: ${url.substring(0, 60)} | Size: ${text.length}`, 'color:#666');
-                }
-            } catch (e) {
-                console.error('[FETCH-ERROR]', e);
-            }
-            return response;
-        };
-        console.log('%c[v7.0] 📡 Fetch Interception ACTIVE', 'color:#0f0;font-weight:bold');
-    } catch (e) { console.error('[v7.0] Fetch Hijack Error:', e); }
-    // ============================================================
-    // 🛡️ v6.1 WEBSOCKET INTERCEPTION WITH AFB88 + SABA PRIORITY
-    // ============================================================
-    try {
-        const NativeWebSocket = window.WebSocket;
-        if (NativeWebSocket) {
-            window.WebSocket = function (...args) {
-                const socket = new NativeWebSocket(...args);
-                const wsUrl = args[0];
-                
-                // 🛡️ v9.6: Skip local/backend WebSocket traffic
-                const isLocalWs = wsUrl.includes('localhost') || wsUrl.includes('127.0.0.1') || wsUrl.includes(':8080') || wsUrl.includes(':3001');
-                if (isLocalWs) {
-                    console.log(`%c[WS-CONNECT] 🚫 Skipping local WebSocket: ${wsUrl}`, 'color:#888');
-                    return socket;
-                }
-
-                console.log(`%c[WS-CONNECT] 🔌 WebSocket opened: ${wsUrl}`, 'color:#0ff;font-weight:bold');
-
-                socket.addEventListener('message', async function (event) {
-                    try {
-                        const originalPayload = event.data;
-                        console.log(`%c[WS-MESSAGE] 📨 Received ${originalPayload.length} bytes from ${wsUrl.substring(0, 50)}`, 'color:#ff0');
-
-                        // Langkah 2: Patch Listener (Injection Point)
-                        const cleanData = await safeDecodePayload(originalPayload);
-                        console.log(`%c[WS-DECODED] 📦 Decoded ${cleanData.length} chars from ${wsUrl.substring(0, 50)}`, 'color:#0ff');
-
-                        if (isSabaMatchData(cleanData, wsUrl)) {
-                            console.log(`%c[DATA-CAPTURE] 🎯 WS MATCH FOUND! Processing: ${wsUrl.substring(0, 50)}`, 'background:#0f0;color:#fff;font-weight:bold');
-                            lastNetworkBTime = Date.now();
-                            shadowOverrideActive = false;
-
-                            // Langkah 3: Proteksi Regex (Anti-Crash)
-                            await interceptAndParseSaba(wsUrl, cleanData);
-                        } else {
-                            console.log(`%c[DATA-SKIP] ⏭️ WS No match for: ${wsUrl.substring(0, 50)} | Size: ${cleanData.length}`, 'color:#666');
-
-                            // 🛡️ v7.10: FORCE CAPTURE for AFB domains - send everything
-                            const isAfbWs = wsUrl.includes('afb') || wsUrl.includes('jps9') || wsUrl.includes('prosportslive');
-                            if (isAfbWs && typeof cleanData === 'string' && cleanData.length > 10) {
-                                console.log(`%c[WS-AFB-FORCE] 📡 Capturing all data from ${wsUrl.substring(0, 50)}`, 'color:#ff0;font-weight:bold');
-                                await interceptAndParseSaba(wsUrl, cleanData);
-                            } else if (typeof cleanData === 'string' && cleanData.length > 50) {
-                                // console.log(`[WS-CLEAN] Received unexpected data from ${wsUrl}`);
-                            }
-                        }
-                    } catch (e) {
-                        console.error('[WS-LISTENER-ERROR]', e);
-                    }
-                });
-
-                return socket;
-            };
-            window.WebSocket.prototype = NativeWebSocket.prototype;
-            window.WebSocket.CONNECTING = NativeWebSocket.CONNECTING;
-            window.WebSocket.OPEN = NativeWebSocket.OPEN;
-            window.WebSocket.CLOSING = NativeWebSocket.CLOSING;
-            window.WebSocket.CLOSED = NativeWebSocket.CLOSED;
-
-            console.log('%c[v6.1] 🔌 WEBSOCKET HIJACKED for AFB88 + SABA capture', 'color:#0f0;font-weight:bold');
-        }
-    } catch (e) {
-        console.error('[v6.1] WebSocket hijack failed:', e);
-    }
-
-    // 🛡️ v6.1: Log injection success
-    console.log('%c[v6.1] 🚀 AGGRESSIVE PIPE RECONSTRUCTION ACTIVE', 'background:#000;color:#0f0;font-size:16px;font-weight:bold');
-    console.log('%c[v6.1] 📡 AFB88 + SABA WebSocket + XHR + Fetch interception enabled', 'color:#0ff');
 
     // 🛡️ v3.5.2 ACTIVATE_MARKET_AUTO Listener - DEEP DOM OBSERVER STRATEGY
     // Abandoned nav click strategy - now uses passive DOM parsing
@@ -1635,4 +1651,4 @@
         }
     }
 
-})();
+})(); // End of main isolated injection module
