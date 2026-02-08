@@ -590,6 +590,10 @@
         // 🛡️ Anti-Crash Protection: Validate data type
         if (!payload) return;
 
+        // Declare providerPrefix at the top of the function
+        const isAfbUrl = getProviderFromUrl(url) === 'AFB88';
+        const providerPrefix = isAfbUrl ? 'AFB88_' : 'SABA_';
+
         let workingPayload = payload;
         // Ensure we are working with clean string if it was compressed
         if (typeof payload === 'string' && payload.substring(0, 3) === 'H4s') {
@@ -643,9 +647,6 @@
 
         // 3. DEEP SEARCH for Events
         const events = findEventsArray(obj);
-
-        const isAfbUrl = getProviderFromUrl(url) === 'AFB88';
-        const providerPrefix = isAfbUrl ? 'AFB88_' : 'SABA_';
 
         if (events && events.length > 0) {
             console.log(`%c[PARSER-OK] ✅ Deep Search found ${events.length} events in nested structure`, 'color:#0f0;font-weight:bold');
