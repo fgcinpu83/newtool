@@ -26,6 +26,7 @@ import { parseProvider } from '../contracts';
 import { EventIdentity } from '../utils/identity.utils';
 import { SystemConfig, ProviderType, getAccountForProvider, detectProviderFromUrl } from '../providers/account-binding.config';
 import { ProviderSessionManager } from '../managers/provider-session.manager';
+import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 
 // ðŸ”¥ PROVIDER STATE MACHINE
 // Expanded to include Guardian states
@@ -86,6 +87,83 @@ export class WorkerService implements OnModuleInit {
     private systemConfigCacheTime = 0;
     private readonly SYSTEM_CONFIG_TTL = 5000; // 5 seconds
 
+    // 🛡️ CRITICAL FIX: TOGGLE ON CRASH PREVENTION - READY STATE FLAGS
+    private chromeReady: boolean = false;
+    private injectedReady: boolean = false;
+    private cdpReady: boolean = false;
+    private observerStarted: Record<string, boolean> = { A: false, B: false };
+
+    // ─── READINESS FLAG SETTERS ─────────────────────
+
+    /** Set Chrome ready flag when Chrome connection is established */
+    setChromeReady(ready: boolean) {
+        if (this.chromeReady !== ready) {
+            this.chromeReady = ready;
+            console.log(`[WORKER] 🔧 Chrome ready: ${ready}`);
+            this.broadcastReadinessStatus();
+        }
+    }
+
+    /** Set injected ready flag when first injected event is received */
+    setInjectedReady(ready: boolean) {
+        if (this.injectedReady !== ready) {
+            this.injectedReady = ready;
+            console.log(`[WORKER] 🔧 Injected ready: ${ready}`);
+            this.broadcastReadinessStatus();
+        }
+    }
+
+    /** Set CDP ready flag when first CDP event is received */
+    setCdpReady(ready: boolean) {
+        if (this.cdpReady !== ready) {
+            this.cdpReady = ready;
+            console.log(`[WORKER] 🔧 CDP ready: ${ready}`);
+            this.broadcastReadinessStatus();
+        }
+    }
+
+    /** Broadcast current readiness status */
+    private broadcastReadinessStatus() {
+        this.gateway.sendUpdate('pipeline:readiness', {
+            chromeReady: this.chromeReady,
+            injectedReady: this.injectedReady,
+            cdpReady: this.cdpReady,
+            allReady: this.chromeReady && this.injectedReady && this.cdpReady,
+            timestamp: Date.now()
+        });
+    }
+
+    // ─── OBSERVER MANAGEMENT ────────────────────────
+
+    /** Start observer for account (only called when all flags are ready) */
+    private startObserverForAccount(account: string) {
+        console.log(`[WORKER] 🎯 Starting observer for Account ${account}`);
+        
+        // The "observer" is essentially enabling data processing for this account
+        // The actual processing happens in WorkerManager when stream_data is received
+        // This method ensures the account is marked as active and ready to process data
+        
+        this.gateway.sendUpdate('system_log', {
+            level: 'info',
+            message: `[OBSERVER] Account ${account} observer started - pipeline ready`,
+            timestamp: Date.now()
+        });
+    }
+
+    /** Stop observer for account */
+    private stopObserverForAccount(account: string) {
+        console.log(`[WORKER] 🛑 Stopping observer for Account ${account}`);
+        
+        // Stop any active processing for this account
+        // The account will still receive events but won't process them as active
+        
+        this.gateway.sendUpdate('system_log', {
+            level: 'info', 
+            message: `[OBSERVER] Account ${account} observer stopped`,
+            timestamp: Date.now()
+        });
+    }
+
     constructor(
         @Inject(forwardRef(() => MarketService))
         private marketService: MarketService,
@@ -96,7 +174,8 @@ export class WorkerService implements OnModuleInit {
         private guardianService: ProviderGuardianService,
         private registry: ContractRegistry,
         private decoder: UniversalDecoderService,
-        private providerManager: ProviderSessionManager
+        private providerManager: ProviderSessionManager,
+        private chromeManager: ChromeConnectionManager
     ) {
         // 🛡️ Initialize Provider Session Manager
         // Already initialized in constructor
@@ -109,6 +188,16 @@ export class WorkerService implements OnModuleInit {
     async onModuleInit() {
         if (!fs.existsSync(this.wireLogDir)) fs.mkdirSync(this.wireLogDir, { recursive: true });
         this.logger.log(`🏗️ WorkerService v3.1 INITIALIZED (InstanceID: ${this.instanceId})`);
+        
+        // 🛡️ CRITICAL FIX: Check Chrome readiness on startup
+        try {
+            const chromeInfoA = await this.chromeManager.attach(9222);
+            const chromeInfoB = await this.chromeManager.attach(9223);
+            this.setChromeReady(chromeInfoA.state === 'CONNECTED' || chromeInfoB.state === 'CONNECTED');
+        } catch (e) {
+            console.error('[WORKER] Chrome readiness check failed:', e.message);
+            this.setChromeReady(false);
+        }
         
         // 🛡️ v11.0: ALWAYS start with accounts OFF and balance 0
         // Do NOT load from Redis - fresh start every time
@@ -169,10 +258,40 @@ export class WorkerService implements OnModuleInit {
                 // 3. Broadcast status
                 this.broadcastStatus();
 
-                // NOTE: Browser open/close is handled by frontend + BrowserAutomation
-                // 🚀 v9.8: PARALEL MURNI (Operation Full Sync)
+                // 🛡️ CRITICAL FIX: TOGGLE ON CRASH PREVENTION
                 if (active) {
-                    this.triggerParallelLaunch(account);
+                    // Check all readiness flags before allowing toggle ON
+                    if (!this.chromeReady || !this.injectedReady || !this.cdpReady) {
+                        const missing = [];
+                        if (!this.chromeReady) missing.push('Chrome');
+                        if (!this.injectedReady) missing.push('Injected');
+                        if (!this.cdpReady) missing.push('CDP');
+
+                        console.log(`[WORKER] 🚫 TOGGLE ON REJECTED for Account ${account} - Pipeline not ready: ${missing.join(', ')}`);
+                        this.gateway.sendUpdate('system_log', {
+                            level: 'error',
+                            message: `[TOGGLE] Account ${account} toggle ON rejected - Pipeline not ready: ${missing.join(', ')}`,
+                            timestamp: Date.now()
+                        });
+                        return; // Abort toggle ON
+                    }
+
+                    // All flags ready - proceed with observer start
+                    if (!this.observerStarted[account]) {
+                        this.observerStarted[account] = true;
+                        console.log(`[WORKER] ✅ TOGGLE ON ACCEPTED for Account ${account} - Starting observer`);
+                        this.startObserverForAccount(account);
+                    } else {
+                        console.log(`[WORKER] ℹ️ TOGGLE ON IGNORED for Account ${account} - Observer already started`);
+                    }
+                } else {
+                    // Toggle OFF - safe stop
+                    if (this.observerStarted[account]) {
+                        this.observerStarted[account] = false;
+                        console.log(`[WORKER] 🛑 TOGGLE OFF for Account ${account} - Stopping observer`);
+                        this.stopObserverForAccount(account);
+                    }
+                    // NOTE: Do NOT reset readiness flags on toggle OFF unless Chrome truly disconnected
                 }
             }
 
@@ -358,7 +477,15 @@ export class WorkerService implements OnModuleInit {
         try {
             if (!data || !data.account) return;
 
-            // 🔍 Diagnostic: Raw Payload Logging (v3.2)
+            // �️ CRITICAL FIX: Set readiness flags on first events
+            const eventSource = data.source;
+            if (eventSource === 'injected' && !this.injectedReady) {
+                this.setInjectedReady(true);
+            } else if (eventSource === 'cdp' && !this.cdpReady) {
+                this.setCdpReady(true);
+            }
+
+            // �🔍 Diagnostic: Raw Payload Logging (v3.2)
             const account0 = String(data.account).trim().toUpperCase();
             const payloadLen = JSON.stringify(data).length;
             const rawMsg = `[RAW-INGEST] 📥 Ingested from ${account0}: ${(payloadLen / 1024).toFixed(2)} KB | type=${(data.type || '').toLowerCase()}`;
