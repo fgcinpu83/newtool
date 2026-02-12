@@ -428,11 +428,27 @@ function renderFixedAccountPanels() {
     });
 
     // Attach handlers for fixed toggles and inject
+    // Function to update global toggles based on individual ones
+    function updateGlobalToggles() {
+        const primaryAccToggle = document.querySelector('.fixed-acc-toggle[data-acc="A"]');
+        const secondaryAccToggle = document.querySelector('.fixed-acc-toggle[data-acc="B"]');
+        const primaryToggle = document.getElementById('primary-toggle');
+        const secondaryToggle = document.getElementById('secondary-toggle');
+        if (primaryToggle && primaryAccToggle) {
+            primaryToggle.checked = primaryAccToggle.checked;
+        }
+        if (secondaryToggle && secondaryAccToggle) {
+            secondaryToggle.checked = secondaryAccToggle.checked;
+        }
+    }
+
     document.querySelectorAll('.fixed-acc-toggle').forEach(el => {
         el.addEventListener('change', (e) => {
             const acc = e.target.dataset.acc;
             const active = e.target.checked;
             try { chrome.runtime.sendMessage({ type: 'ACCOUNT_TOGGLE', account: { id: acc }, active, clearConfig: !active }); } catch (err) {}
+            // Update the global toggles
+            updateGlobalToggles();
         });
     });
     document.querySelectorAll('.fixed-inject-btn').forEach(btn => {
@@ -442,5 +458,31 @@ function renderFixedAccountPanels() {
             try { chrome.runtime.sendMessage({ type: 'INJECT_ACCOUNT', account: { id: acc } }); } catch (err) {}
         });
     });
-}
+
+    // Handlers for global primary and secondary toggles
+    const primaryToggle = document.getElementById('primary-toggle');
+    const secondaryToggle = document.getElementById('secondary-toggle');
+    if (primaryToggle) {
+        primaryToggle.addEventListener('change', (e) => {
+            const checked = e.target.checked;
+            const accToggle = document.querySelector('.fixed-acc-toggle[data-acc="A"]');
+            if (accToggle) {
+                accToggle.checked = checked;
+                accToggle.dispatchEvent(new Event('change'));
+            }
+        });
+    }
+    if (secondaryToggle) {
+        secondaryToggle.addEventListener('change', (e) => {
+            const checked = e.target.checked;
+            const accToggle = document.querySelector('.fixed-acc-toggle[data-acc="B"]');
+            if (accToggle) {
+                accToggle.checked = checked;
+                accToggle.dispatchEvent(new Event('change'));
+            }
+        });
+    }
+
+    // Initialize global toggles
+    updateGlobalToggles();
 }
