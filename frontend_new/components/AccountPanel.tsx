@@ -36,8 +36,25 @@ import { sendCommand } from '../websocket/client'
   }
 
     // provider presence detection from backend sensors (best-effort)
-    const hasSaba = !!state.sensors?.some(s => /saba/i.test(s.provider))
-    const hasAfb = !!state.sensors?.some(s => /afb/i.test(s.provider) || /afb88/i.test(s.provider))
+    function getProviderStatus(providerRegex: RegExp) {
+      const s = state.sensors?.find(sensor => providerRegex.test(sensor.provider))
+      if (!s) return 'offline'
+      // Try to infer freshness from lastPacket if it's a timestamp
+      const lp = s.lastPacket
+      // lastPacket may be ISO string or numeric timestamp or other; attempt parse
+      const ts = Date.parse(lp)
+      if (isNaN(ts)) {
+        // unknown format — treat as warn (present but unknown freshness)
+        return 'warn'
+      }
+      const age = Date.now() - ts
+      if (age < 30_000) return 'ready' // <30s
+      if (age < 120_000) return 'stale' // 30s-2m
+      return 'error' // >2m
+    }
+
+    const sabaStatus = getProviderStatus(/saba/i)
+    const afbStatus = getProviderStatus(/afb|afb88/i)
 
     return (
       <div className="bg-[#1f2937] border border-[#122231] rounded-lg p-4">
@@ -59,11 +76,11 @@ import { sendCommand } from '../websocket/client'
        
        <div className="mt-3 flex items-center gap-3">
          <div className="flex items-center gap-2">
-           <span className={`inline-block w-3 h-3 rounded-full ${hasSaba ? 'bg-green-400' : 'bg-gray-600'}`}></span>
+           <span className={`inline-block w-3 h-3 rounded-full ${sabaStatus === 'ready' ? 'bg-green-400' : sabaStatus === 'stale' ? 'bg-yellow-400' : sabaStatus === 'error' ? 'bg-red-500' : 'bg-gray-600'}`}></span>
            <span className="text-xs text-slate-300">SABA</span>
          </div>
          <div className="flex items-center gap-2">
-           <span className={`inline-block w-3 h-3 rounded-full ${hasAfb ? 'bg-green-400' : 'bg-gray-600'}`}></span>
+           <span className={`inline-block w-3 h-3 rounded-full ${afbStatus === 'ready' ? 'bg-green-400' : afbStatus === 'stale' ? 'bg-yellow-400' : afbStatus === 'error' ? 'bg-red-500' : 'bg-gray-600'}`}></span>
            <span className="text-xs text-slate-300">AFB</span>
          </div>
        </div>
