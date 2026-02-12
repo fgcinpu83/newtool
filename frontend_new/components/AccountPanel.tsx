@@ -1,6 +1,6 @@
  'use client'
 
- import React from 'react'
+import React, { useState } from 'react'
 import { BackendState } from '../types'
 import { sendCommand } from '../websocket/client'
 
@@ -9,6 +9,31 @@ import { sendCommand } from '../websocket/client'
    // minimal mapping - these fields should come from backend state in a full implementation
    const balance = isA ? (state.executionHistory.length ? '$4,250.00' : '$0.00') : '$0.00'
    const ping = isA ? '45 ms' : '-- ms'
+
+  // simple local toggle component defined inline to avoid creating new file
+  function AccountToggle({ isA }: { isA: boolean }) {
+    const [enabled, setEnabled] = useState(false)
+    const acc = isA ? 'A' : 'B'
+    const handleClick = () => {
+      if (enabled) {
+        sendCommand('toggle_off', { account: acc })
+      } else {
+        sendCommand('toggle_on', { account: acc })
+      }
+      setEnabled(!enabled)
+    }
+
+    return (
+      <button
+        aria-pressed={enabled ? 'true' : 'false'}
+        aria-label={isA ? 'Toggle primary account' : 'Toggle secondary account'}
+        onClick={handleClick}
+        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${enabled ? 'bg-green-500 text-black' : 'bg-gray-700 text-white'}`}
+      >
+        {enabled ? 'ON' : 'OFF'}
+      </button>
+    )
+  }
 
   return (
      <div className="bg-[#0f172a] border border-[#122231] rounded-lg p-4">
@@ -20,18 +45,10 @@ import { sendCommand } from '../websocket/client'
          <div className="flex items-center gap-3">
           <div className="text-sm text-slate-300">{balance}</div>
           <div className="text-xs text-slate-400">Ping: <span className="text-green-400 font-bold">{ping}</span></div>
-          {/* Toggle for enabling/disabling this account */}
+          {/* Toggle button for enabling/disabling this account */}
           <div className="flex items-center gap-2 ml-2">
-            <label className="text-xs text-slate-300">{isA ? 'Enabled' : 'Enabled'}</label>
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              onChange={(e) => {
-                const checked = e.target.checked
-                if (checked) sendCommand('toggle_on', { account: isA ? 'A' : 'B' })
-                else sendCommand('toggle_off', { account: isA ? 'A' : 'B' })
-              }}
-            />
+            <label className="sr-only">{isA ? 'Primary account enable' : 'Secondary account enable'}</label>
+            <AccountToggle isA={isA} />
           </div>
          </div>
        </div>
