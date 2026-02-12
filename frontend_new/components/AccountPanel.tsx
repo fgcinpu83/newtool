@@ -35,8 +35,12 @@ import { sendCommand } from '../websocket/client'
     )
   }
 
-  return (
-     <div className="bg-[#0f172a] border border-[#122231] rounded-lg p-4">
+    // provider presence detection from backend sensors (best-effort)
+    const hasSaba = !!state.sensors?.some(s => /saba/i.test(s.provider))
+    const hasAfb = !!state.sensors?.some(s => /afb/i.test(s.provider) || /afb88/i.test(s.provider))
+
+    return (
+      <div className="bg-[#1f2937] border border-[#122231] rounded-lg p-4">
        <div className="flex items-center justify-between mb-3">
          <div>
            <div className="text-sm font-bold text-white">{isA ? 'Primary Account' : 'Secondary Account'}</div>
@@ -50,6 +54,17 @@ import { sendCommand } from '../websocket/client'
             <label className="sr-only">{isA ? 'Primary account enable' : 'Secondary account enable'}</label>
             <AccountToggle isA={isA} />
           </div>
+         </div>
+       </div>
+       
+       <div className="mt-3 flex items-center gap-3">
+         <div className="flex items-center gap-2">
+           <span className={`inline-block w-3 h-3 rounded-full ${hasSaba ? 'bg-green-400' : 'bg-gray-600'}`}></span>
+           <span className="text-xs text-slate-300">SABA</span>
+         </div>
+         <div className="flex items-center gap-2">
+           <span className={`inline-block w-3 h-3 rounded-full ${hasAfb ? 'bg-green-400' : 'bg-gray-600'}`}></span>
+           <span className="text-xs text-slate-300">AFB</span>
          </div>
        </div>
 
