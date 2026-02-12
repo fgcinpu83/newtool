@@ -5,61 +5,61 @@ import { sendCommand } from '../websocket/client'
 
 export default function ControlPanel({ state }: { state: BackendState }) {
   return (
-    <div className="bg-[#1a2332] border border-[#2a374f] rounded-lg p-6">
-      <h2 className="text-xl font-bold text-white mb-4">Control Panel</h2>
+    <div className="bg-surface-dark border border-border-dark rounded-lg p-6">
+      <h2 className="text-lg font-semibold text-white mb-4">Control Panel</h2>
       <div className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-300">Primary (Account A)</div>
+            <div className="text-sm font-medium text-slate-300">Primary (Account A)</div>
             <button
               disabled={state.fsm.state !== 'IDLE'}
               onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'A', active: true })}
-              className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
+              className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'IDLE'
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  ? 'bg-primary hover:bg-primary/90 text-black'
+                  : 'bg-background-dark text-slate-400 cursor-not-allowed'
               }`}
             >
-              🚀 Toggle ON A
+              Enable A
             </button>
 
             <button
               disabled={state.fsm.state !== 'RUNNING'}
               onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'A', active: false })}
-              className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
+              className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'RUNNING'
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  ? 'bg-danger hover:bg-danger/90 text-white'
+                  : 'bg-background-dark text-slate-400 cursor-not-allowed'
               }`}
             >
-              🛑 Toggle OFF A
+              Disable A
             </button>
           </div>
 
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-300">Secondary (Account B)</div>
+            <div className="text-sm font-medium text-slate-300">Secondary (Account B)</div>
             <button
               disabled={state.fsm.state !== 'IDLE'}
               onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'B', active: true })}
-              className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
+              className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'IDLE'
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  ? 'bg-primary hover:bg-primary/90 text-black'
+                  : 'bg-background-dark text-slate-400 cursor-not-allowed'
               }`}
             >
-              🚀 Toggle ON B
+              Enable B
             </button>
 
             <button
               disabled={state.fsm.state !== 'RUNNING'}
               onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'B', active: false })}
-              className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
+              className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'RUNNING'
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  ? 'bg-danger hover:bg-danger/90 text-white'
+                  : 'bg-background-dark text-slate-400 cursor-not-allowed'
               }`}
             >
-              🛑 Toggle OFF B
+              Disable B
             </button>
           </div>
         </div>
