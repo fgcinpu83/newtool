@@ -1,4 +1,36 @@
 import './globals.css'
+import React from 'react'
+import TopHeader from '../components/TopHeader'
+import SidebarFilters from '../components/SidebarFilters'
+import LogsPanel from '../components/LogsPanel'
+
+export const metadata = {
+  title: 'Antigravity System',
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body className="bg-[#071028] text-slate-200">
+        <div className="min-h-screen flex flex-col">
+          <TopHeader />
+          <div className="flex flex-1 gap-4 max-w-[1400px] w-full mx-auto p-4">
+            <aside className="w-80">
+              <SidebarFilters />
+            </aside>
+
+            <main className="flex-1">
+              {children}
+              <div className="mt-4">
+                <LogsPanel />
+              </div>
+            </main>
+          </div>
+        </div>
+      </body>
+    </html>
+  )
+}import './globals.css'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import SystemBootstrap from './providers';
