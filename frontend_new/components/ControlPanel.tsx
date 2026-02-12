@@ -13,7 +13,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
             <div className="text-sm font-semibold text-slate-300">Primary (Account A)</div>
             <button
               disabled={state.fsm.state !== 'IDLE'}
-              onClick={() => sendCommand('toggle_on', { account: 'A' })}
+              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'A', active: true })}
               className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
                 state.fsm.state === 'IDLE'
                   ? 'bg-green-600 hover:bg-green-700 text-white'
@@ -25,7 +25,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
 
             <button
               disabled={state.fsm.state !== 'RUNNING'}
-              onClick={() => sendCommand('toggle_off', { account: 'A' })}
+              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'A', active: false })}
               className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
                 state.fsm.state === 'RUNNING'
                   ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -40,7 +40,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
             <div className="text-sm font-semibold text-slate-300">Secondary (Account B)</div>
             <button
               disabled={state.fsm.state !== 'IDLE'}
-              onClick={() => sendCommand('toggle_on', { account: 'B' })}
+              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'B', active: true })}
               className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
                 state.fsm.state === 'IDLE'
                   ? 'bg-green-600 hover:bg-green-700 text-white'
@@ -52,7 +52,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
 
             <button
               disabled={state.fsm.state !== 'RUNNING'}
-              onClick={() => sendCommand('toggle_off', { account: 'B' })}
+              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'B', active: false })}
               className={`w-full py-3 px-4 rounded-lg font-bold transition-colors ${
                 state.fsm.state === 'RUNNING'
                   ? 'bg-red-600 hover:bg-red-700 text-white'

@@ -86,6 +86,16 @@ chrome.runtime.onMessage.addListener((message) => {
         socket.emit('endpoint_captured', message.packet);
     }
 
+    // Allow other extension contexts to request backend command emission
+    if (message.type === 'SEND_COMMAND' && isConnected && socket && message.command) {
+        try {
+            console.log('[OFFSCREEN] 📤 Emitting command to backend:', message.command);
+            socket.emit('command', message.command);
+        } catch (e) {
+            console.error('[OFFSCREEN] ❌ Failed to emit command:', e);
+        }
+    }
+
     if (message.type === 'OFFSCREEN_PING') {
         chrome.runtime.sendMessage({ type: 'OFFSCREEN_PONG', timestamp: Date.now() });
     }

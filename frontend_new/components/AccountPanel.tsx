@@ -15,11 +15,8 @@ import { sendCommand } from '../websocket/client'
     const [enabled, setEnabled] = useState(false)
     const acc = isA ? 'A' : 'B'
     const handleClick = () => {
-      if (enabled) {
-        sendCommand('toggle_off', { account: acc })
-      } else {
-        sendCommand('toggle_on', { account: acc })
-      }
+      // send canonical per-account toggle to backend
+      sendCommand('TOGGLE_ACCOUNT', { account: acc, active: !enabled })
       setEnabled(!enabled)
     }
 
