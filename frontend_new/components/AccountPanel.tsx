@@ -63,38 +63,74 @@ import { sendCommand } from '../websocket/client'
     const afbStatus = getProviderStatus(/afb|afb88/i)
 
     return (
-      <div className="bg-[#1f2937] border border-[#122231] rounded-lg p-4">
-       <div className="flex items-center justify-between mb-3">
-         <div>
-           <div className="text-sm font-bold text-white">{isA ? 'Primary Account' : 'Secondary Account'}</div>
-           <div className="text-xs text-slate-400">{isA ? 'Connected' : 'Stopped'}</div>
-         </div>
-         <div className="flex items-center gap-3">
-          <div className="text-sm text-slate-300">{balance}</div>
-          <div className="text-xs text-slate-400">Ping: <span className="text-green-400 font-bold">{ping}</span></div>
-          {/* Toggle button for enabling/disabling this account */}
-          <div className="flex items-center gap-2 ml-2">
-            <label className="sr-only">{isA ? 'Primary account enable' : 'Secondary account enable'}</label>
-            <AccountToggle isA={isA} />
+      <div className="bg-surface-dark border border-border-dark rounded-lg p-4">
+        <div className="flex justify-between items-start">
+          <div className="flex items-center gap-3">
+            <div className={`size-8 rounded bg-blue-900/30 text-blue-400 flex items-center justify-center font-bold text-sm border border-blue-900/50`}>{account}</div>
+            <div>
+              <h4 className="text-white text-sm font-semibold">{isA ? 'Primary Account' : 'Secondary Account'}</h4>
+              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                <span className={`size-1.5 rounded-full ${isA ? 'bg-success' : 'bg-danger'}`}></span>
+                <span>{isA ? 'Connected' : 'Stopped'}</span>
+              </div>
+            </div>
           </div>
-         </div>
-       </div>
-       
-       <div className="mt-3 flex items-center gap-3">
-         <div className="flex items-center gap-2">
-           <span className={`inline-block w-3 h-3 rounded-full ${sabaStatus === 'ready' ? 'bg-green-400' : sabaStatus === 'stale' ? 'bg-yellow-400' : sabaStatus === 'error' ? 'bg-red-500' : 'bg-gray-600'}`}></span>
-           <span className="text-xs text-slate-300">SABA</span>
-         </div>
-         <div className="flex items-center gap-2">
-           <span className={`inline-block w-3 h-3 rounded-full ${afbStatus === 'ready' ? 'bg-green-400' : afbStatus === 'stale' ? 'bg-yellow-400' : afbStatus === 'error' ? 'bg-red-500' : 'bg-gray-600'}`}></span>
-           <span className="text-xs text-slate-300">AFB</span>
-         </div>
-       </div>
 
-       <div className="grid grid-cols-2 gap-3">
-         <div className="bg-[#071827] p-2 rounded text-xs text-slate-300">Endpoints</div>
-         <div className="bg-[#071827] p-2 rounded text-xs text-slate-300">Status</div>
-       </div>
-     </div>
-   )
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              className="sr-only peer"
+              type="checkbox"
+              checked={(isA ? (state as any).accountA_active : (state as any).accountB_active) || false}
+              onChange={(e) => {
+                const active = e.target.checked
+                sendCommand('TOGGLE_ACCOUNT', { account: isA ? 'A' : 'B', active })
+              }}
+            />
+            <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-success"></div>
+          </label>
+        </div>
+
+        <div className="relative bg-background-dark rounded border border-border-dark p-2 flex items-center gap-2 mt-3">
+          <span className="material-symbols-outlined text-slate-500 text-[18px]">link</span>
+          <input aria-label="Whitelabel URL" defaultValue="" className="bg-transparent border-none text-slate-300 text-xs w-full p-0 focus:ring-0 placeholder-slate-600 font-mono tracking-wide" placeholder="Whitelabel URL..." type="text" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mt-3">
+          <div className="bg-background-dark rounded p-2 border border-border-dark/50">
+            <span className="text-xs text-slate-500 uppercase block mb-1">Balance</span>
+            <span className="text-lg font-bold text-white font-mono">{balance}</span>
+          </div>
+          <div className="bg-background-dark rounded p-2 border border-border-dark/50">
+            <span className="text-xs text-slate-500 uppercase block mb-1">Ping</span>
+            <span className="text-lg font-bold text-success font-mono">{ping}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 justify-between bg-background-dark/30 p-2 rounded border border-border-dark/30 mt-3">
+          <div className="text-[10px] text-slate-400 uppercase font-medium mr-2">Endpoints</div>
+          <div className="flex gap-3">
+            <div className="flex flex-col items-center gap-1 group">
+              <div className="size-2.5 rounded-full bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
+              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">LOGIN</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 group">
+              <div className="size-2.5 rounded-full bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
+              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">FEED</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 group">
+              <div className="size-2.5 rounded-full bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
+              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">SLIP</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 group">
+              <div className="size-2.5 rounded-full bg-warning shadow-[0_0_5px_rgba(245,158,11,0.6)]"></div>
+              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">CHECK</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 group">
+              <div className="size-2.5 rounded-full bg-slate-600"></div>
+              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">ORDER</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
  }

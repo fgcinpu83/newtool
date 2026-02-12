@@ -17,13 +17,13 @@
      logs: []
    }
 
-   return (
-     <div className="bg-[#071827] border border-[#122231] rounded-lg p-3">
-       <div className="flex items-center justify-between mb-2">
-         <div className="text-sm text-slate-300 font-bold">Activity Logs</div>
-         <div className="text-xs text-slate-500">Today: +$1,240</div>
-       </div>
-       <ErrorStream state={emptyState} />
-     </div>
-   )
- }
+  return (
+    <div className="bg-surface-dark border border-border-dark rounded-lg p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-white font-semibold">Activity Logs</div>
+        <div className="text-xs text-slate-400">Today: +$1,240</div>
+      </div>
+      <ErrorStream state={emptyState} />
+    </div>
+  )
+}
