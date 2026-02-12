@@ -1,6 +1,6 @@
  'use client'
 
- import React from 'react'
+import React from 'react'
  import { BackendState } from '../types'
 
  export default function LiveScanner({ state }: { state: BackendState }) {

@@ -1,9 +1,8 @@
  'use client'
 
- import React from 'react'
- import ErrorStream from './ErrorStream'
+import React from 'react'
 
- export default function SidebarFilters() {
+export default function SidebarFilters() {
    return (
      <div className="space-y-6">
        <div className="bg-[#0f172a] border border-[#122231] rounded-lg p-4">
@@ -31,17 +30,7 @@
          </div>
        </div>
 
-       <div>
-         <ErrorStream state={{
-           connection: { backendConnected: false, chromeConnected: false, injectedReady: false, cdpReady: false },
-           fsm: { state: 'IDLE' },
-           gravity: { mode: 'STANDBY', activeOpportunities: 0 },
-           sensors: [],
-           opportunities: [],
-           executionHistory: [],
-           logs: []
-         }} />
-       </div>
+       <div className="text-xs text-slate-500">Logs preview available in main view.</div>
      </div>
    )
  }

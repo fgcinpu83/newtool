@@ -1,93 +1,36 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { connect } from '../websocket/client'
-import { BackendState } from '../types'
+import type { BackendState } from '../types'
 
-const initialState: BackendState = {
+const EMPTY_STATE: BackendState = {
   connection: {
     backendConnected: false,
     chromeConnected: false,
     injectedReady: false,
-    cdpReady: false
+    cdpReady: false,
   },
-  fsm: {
-    state: 'IDLE'
-  },
-  gravity: {
-    mode: 'STANDBY',
-    activeOpportunities: 0
-  },
+  fsm: { state: 'IDLE' },
+  gravity: { mode: 'STANDBY', activeOpportunities: 0 },
   sensors: [],
   opportunities: [],
   executionHistory: [],
-  logs: []
+  logs: [],
 }
 
-export function useBackendState() {
-  const [state, setState] = useState<BackendState>(initialState)
-
-  const handleMessage = useCallback((data: any) => {
-    setState(prevState => {
-      if (data.accountA_active !== undefined || data.accountB_active !== undefined) {
-        // system_status event
-        return {
-          ...prevState,
-          connection: {
-            ...prevState.connection,
-            backendConnected: true
-          },
-          fsm: {
-            state: data.accountA_active || data.accountB_active ? 'RUNNING' : 'IDLE'
-          }
-        }
-      }
-
-      if (data.chromeReady !== undefined) {
-        // pipeline:readiness event
-        return {
-          ...prevState,
-          connection: {
-            ...prevState.connection,
-            chromeConnected: data.chromeReady,
-            injectedReady: data.injectedReady,
-            cdpReady: data.cdpReady
-          }
-        }
-      }
-
-      if (data.fromState !== undefined) {
-        // fsm:transition event
-        return {
-          ...prevState,
-          fsm: {
-            state: data.toState as 'IDLE' | 'STARTING' | 'RUNNING' | 'STOPPING'
-          }
-        }
-      }
-
-      if (data.level !== undefined) {
-        // system_log event
-        const newLog = {
-          id: Date.now().toString(),
-          message: data.message,
-          level: data.level,
-          timestamp: new Date().toISOString()
-        }
-        return {
-          ...prevState,
-          logs: [newLog, ...prevState.logs.slice(0, 49)] // Keep last 50 logs
-        }
-      }
-
-      // For other events, return current state
-      return prevState
-    })
-  }, [])
+export function useBackendState(): BackendState {
+  const [state, setState] = useState<BackendState>(EMPTY_STATE)
 
   useEffect(() => {
-    connect(handleMessage)
-  }, [handleMessage])
+    // Only accept full BackendState messages. The backend MUST emit `backend_state`.
+    connect((msg: BackendState) => {
+      if (!msg || typeof msg !== 'object') return
+      if (!('connection' in msg) || !('fsm' in msg)) return
+      // Replace entire state — no merges, no derived fields.
+      setState(msg)
+    })
+  }, [])
 
   return state
 }
