@@ -12,8 +12,17 @@ import { sendCommand } from '../websocket/client'
 
   // simple local toggle component defined inline to avoid creating new file
   function AccountToggle({ isA }: { isA: boolean }) {
-    const [enabled, setEnabled] = useState(false)
     const acc = isA ? 'A' : 'B'
+    // initialize enabled from backend state if available; default OFF
+    const initial = (isA ? (state as any).accountA_active : (state as any).accountB_active) || false
+    const [enabled, setEnabled] = useState<boolean>(initial)
+
+    // keep toggle in sync with backend updates
+    React.useEffect(() => {
+      const backendVal = isA ? (state as any).accountA_active : (state as any).accountB_active
+      if (typeof backendVal === 'boolean' && backendVal !== enabled) setEnabled(backendVal)
+    }, [(state as any).accountA_active, (state as any).accountB_active])
+
     const handleClick = () => {
       // send canonical per-account toggle to backend
       sendCommand('TOGGLE_ACCOUNT', { account: acc, active: !enabled })

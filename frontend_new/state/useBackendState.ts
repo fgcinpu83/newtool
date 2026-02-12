@@ -30,6 +30,16 @@ export function useBackendState(): BackendState {
       // Replace entire state — no merges, no derived fields.
       setState(msg)
     })
+    // Also listen for system_status updates and merge important fields
+    try {
+      const s = (window as any).__NEWTOOL_SOCKET__
+      if (s) {
+        s.on('system_status', (data: any) => {
+          if (!data) return
+          setState(prev => ({ ...prev, accountA_active: data.accountA_active, accountB_active: data.accountB_active, providers: data.providers }))
+        })
+      }
+    } catch (e) { }
   }, [])
 
   return state
