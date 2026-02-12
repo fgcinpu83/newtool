@@ -16,23 +16,32 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} bg-[#071028] text-slate-200`}>
+    <html lang="en" className="dark">
+      <body className={`${inter.className} bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-200 font-display h-screen flex flex-col overflow-hidden`}>
         <SystemBootstrap>
-          <div className="min-h-screen flex flex-col">
-            <TopHeader />
-            <div className="flex flex-1 gap-4 max-w-[1400px] w-full mx-auto p-4">
-              <aside className="w-80">
-                <SidebarFilters />
-              </aside>
+          <TopHeader />
 
-              <main className="flex-1">
-                {children}
-                <div className="mt-4">
-                  <LogsPanel />
+          <div className="flex flex-1 overflow-hidden">
+            <aside className="w-80 flex flex-col border-r border-border-dark bg-surface-dark overflow-y-auto custom-scroll shrink-0 z-10">
+              <div className="p-5 space-y-6">
+                <SidebarFilters />
+                <div className="pt-4 mt-auto">
+                  <button className="w-full bg-primary hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                    Apply Configuration
+                  </button>
                 </div>
-              </main>
-            </div>
+              </div>
+            </aside>
+
+            <main className="flex-1 flex flex-col min-w-0 bg-background-dark/50 p-4 gap-4 overflow-hidden">
+              <div className="max-w-7xl mx-auto w-full">
+                {children}
+              </div>
+
+              <div className="mt-4">
+                <LogsPanel />
+              </div>
+            </main>
           </div>
         </SystemBootstrap>
       </body>
