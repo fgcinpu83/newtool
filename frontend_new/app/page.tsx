@@ -1,57 +1,40 @@
-'use client';
+'use client'
 
-import React from 'react';
-import { useSystemStatus } from './lib/SystemStatusProvider';
+import { useBackendState } from '../state/useBackendState'
+import SystemStatus from '../components/SystemStatus'
+import ControlPanel from '../components/ControlPanel'
+import GravityBar from '../components/GravityBar'
+import ArbitrageTable from '../components/ArbitrageTable'
+import ExecutionHistory from '../components/ExecutionHistory'
+import SensorPanel from '../components/SensorPanel'
+import ErrorStream from '../components/ErrorStream'
 
 export default function Page() {
-    const { connected, ready, emit } = useSystemStatus();
+  const state = useBackendState()
 
-    const handleToggleOn = () => {
-        emit('toggle_on', {});
-    };
+  if (!state) return <div>Connecting...</div>
 
-    const handleToggleOff = () => {
-        emit('toggle_off', {});
-    };
+  return (
+    <main className="min-h-screen bg-[#0f172a] text-slate-200 p-4">
+      <div className="max-w-7xl mx-auto space-y-4">
+        <h1 className="text-3xl font-bold text-center mb-8">Antigravity System</h1>
 
-    return (
-        <div className="bg-[#0f172a] text-slate-200 min-h-screen font-sans flex items-center justify-center">
-            <div className="bg-[#1a2332] border border-[#2a374f] rounded-lg p-8 max-w-md w-full">
-                <h1 className="text-2xl font-bold text-white mb-6 text-center">Antigravity System</h1>
-
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <span className="text-slate-300">Backend Connected:</span>
-                        <span className={`font-bold ${connected ? 'text-green-400' : 'text-red-400'}`}>
-                            {connected ? '✅' : '❌'}
-                        </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                        <span className="text-slate-300">System Ready:</span>
-                        <span className={`font-bold ${ready ? 'text-green-400' : 'text-red-400'}`}>
-                            {ready ? '✅' : '❌'}
-                        </span>
-                    </div>
-
-                    <div className="pt-4 border-t border-[#2a374f]">
-                        <div className="flex gap-4">
-                            <button
-                                onClick={handleToggleOn}
-                                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-                            >
-                                Toggle ON
-                            </button>
-                            <button
-                                onClick={handleToggleOff}
-                                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-                            >
-                                Toggle OFF
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+          <SystemStatus state={state} />
+          <ControlPanel state={state} />
+          <GravityBar state={state} />
         </div>
-    );
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <ArbitrageTable state={state} />
+          <ExecutionHistory state={state} />
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <SensorPanel state={state} />
+          <ErrorStream state={state} />
+        </div>
+      </div>
+    </main>
+  )
 }
