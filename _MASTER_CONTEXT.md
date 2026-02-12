@@ -100,3 +100,28 @@ Integrasi multi-provider (AFB88, ISPORT) dalam `E:\newtool` memiliki risiko ting
 - Struktur folder modul provider harus dipisah tegas.
 - Penambahan provider baru (misal: SBOBET) tidak akan merusak kode lama.
 - *Error handling* menjadi tanggung jawab masing-masing adapter, bukan global handler.
+
+---
+
+### RAD-006: CONSTITUTION TOTAL ISOLATION — HARD ENFORCEMENT PATCH
+
+**Status:** ENFORCED  
+**Date:** 2026-02-12  
+**Commit:** [0bce2f2ac788682c332822479b1fb3a1eb174d1c](https://github.com/fgcinpu83/newtool/commit/0bce2f2ac788682c332822479b1fb3a1eb174d1c)
+
+**Context:**  
+Comprehensive audit revealed multiple architectural violations of SYSTEM_CONSTITUTION.md rules, including frontend containing business logic, duplicate extensions, unvalidated backend commands, global mutable state, and potential side-effects. System risked non-deterministic behavior and single source of truth breaches.
+
+**Decision:**  
+Implemented 5-phase hard enforcement patch:
+1. **Frontend Purification:** Removed 1141 lines of business logic from UI, replaced with pure subscriber architecture sending only explicit toggle_on/toggle_off commands.
+2. **Extension Canonicalization:** Removed duplicate extension_desktop/, enforcing single canonical extension at root.
+3. **Backend Command Gatekeeper:** Added command validator with 1s cooldown, FSM validation for toggle_on/toggle_off handlers.
+4. **WebSocket Sanity Lock:** Encapsulated global mutable state (lastExecution) into CooldownController class with backward compatibility.
+5. **Global Side-Effect Scan:** Verified no remaining violations across codebase.
+
+**Consequences:**  
+- Frontend now purely renders state and sends commands; no business logic.
+- Backend validates all commands with guards and state machines.
+- Global state encapsulated in classes, eliminating mutable side-effects.
+- System now fully compliant with constitution rules, ensuring deterministic behavior and single source of truth.

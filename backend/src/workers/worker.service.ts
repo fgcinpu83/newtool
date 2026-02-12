@@ -103,6 +103,10 @@ export class WorkerService implements OnModuleInit {
     // 🛡️ FINAL FIX: TOGGLE FSM - Atomic state machine
     private toggleFsm: Record<string, ToggleState> = { A: ToggleState.IDLE, B: ToggleState.IDLE };
 
+    // 🛡️ COMMAND VALIDATOR - Prevent duplicate commands
+    private lastCommandTime: Record<string, number> = {};
+    private readonly COMMAND_COOLDOWN = 1000; // 1 second cooldown between identical commands
+
     // ─── READINESS FLAG SETTERS ─────────────────────
 
     /** Set Chrome ready flag when Chrome connection is established */
@@ -330,6 +334,15 @@ export class WorkerService implements OnModuleInit {
         // ðŸ”¥ SYNC CONFIG 
         // 🔒 v3.1 FIX: SINGLE AUTHORITY FOR TOGGLE_ACCOUNT
         this.gateway.commandEvents.on('command', async (data) => {
+            // 🛡️ COMMAND VALIDATOR - Reject duplicates within cooldown
+            const commandKey = `${data.type}_${JSON.stringify(data.payload || {})}`;
+            const now = Date.now();
+            if (this.lastCommandTime[commandKey] && (now - this.lastCommandTime[commandKey]) < this.COMMAND_COOLDOWN) {
+                console.log(`[WORKER] 🚫 DUPLICATE COMMAND REJECTED: ${commandKey}`);
+                return;
+            }
+            this.lastCommandTime[commandKey] = now;
+
             if (data.type === 'TOGGLE_ACCOUNT') {
                 const { account, active } = data.payload;
 
@@ -358,6 +371,29 @@ export class WorkerService implements OnModuleInit {
 
                 // 🛡️ FINAL FIX: TOGGLE FSM - Atomic state machine transitions
                 await this.handleToggleFsm(account, active);
+            }
+            else if (data.type === 'toggle_on') {
+                console.log(`[WORKER] 🔄 TOGGLE_ON RECEIVED`);
+                // Validate: Only allow if system is IDLE
+                if (this.toggleFsm.A !== ToggleState.IDLE && this.toggleFsm.B !== ToggleState.IDLE) {
+                    console.log(`[WORKER] 🚫 TOGGLE_ON REJECTED: System not IDLE`);
+                    return;
+                }
+                // Start both accounts
+                await this.handleToggleFsm('A', true);
+                await this.handleToggleFsm('B', true);
+                this.config.accountA_active = true;
+                this.config.accountB_active = true;
+                this.broadcastStatus();
+            }
+            else if (data.type === 'toggle_off') {
+                console.log(`[WORKER] 🔄 TOGGLE_OFF RECEIVED`);
+                // Always allow toggle off
+                await this.handleToggleFsm('A', false);
+                await this.handleToggleFsm('B', false);
+                this.config.accountA_active = false;
+                this.config.accountB_active = false;
+                this.broadcastStatus();
             }
 
             else if (data.type === 'UPDATE_CONFIG') {
