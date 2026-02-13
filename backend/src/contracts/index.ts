@@ -3,12 +3,12 @@ import { parseAfb88 } from './afb88';
 
 export type ProviderParser = (body: string | object) => ParsedMatch[];
 
-export const CONTRACTS: Record<string, ProviderParser> = {
+export const CONTRACTS: Record<string, ProviderParser> = Object.freeze({
     'SABA': parseSaba,
     'ISPORT': parseSaba,
     'AFB88': parseAfb88,
     'AFB': parseAfb88
-};
+});
 
 export function parseProvider(provider: string, body: string | object): ParsedMatch[] {
     const key = (provider || '').toUpperCase();
@@ -23,7 +23,7 @@ export function listProviders() {
 import SABA_CONTRACT from './saba.contract';
 import AFB88_CONTRACT from './afb88.contract';
 
-export const ALL_CONTRACTS = [SABA_CONTRACT, AFB88_CONTRACT];
+export const ALL_CONTRACTS = Object.freeze([SABA_CONTRACT, AFB88_CONTRACT]);
 
 export { SABA_CONTRACT, AFB88_CONTRACT };
 export default ALL_CONTRACTS;

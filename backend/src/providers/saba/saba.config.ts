@@ -13,7 +13,7 @@
 
 import { ProviderConfig } from '../base.provider';
 
-export const SABA_CONFIG: ProviderConfig = {
+export const SABA_CONFIG: ProviderConfig = Object.freeze({
     name: 'SABA',
     
     profile: 'PATH_SESSION',
@@ -91,7 +91,7 @@ export const SABA_CONFIG: ProviderConfig = {
         'cash', 'Cash',
         'available', 'Available',
     ],
-};
+});
 
 /**
  * SABA-specific session token extractor

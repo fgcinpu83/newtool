@@ -16,7 +16,7 @@ export interface ProviderDefinition {
     };
 }
 
-export const PROVIDERS: Record<string, ProviderDefinition> = {
+export const PROVIDERS: Record<string, ProviderDefinition> = Object.freeze({
     AFB88: {
         class: 'EVENT_DRIVEN',
         oddsEndpoints: ['pgBetOdds', 'fnoddsgen'],
@@ -60,4 +60,4 @@ export const PROVIDERS: Record<string, ProviderDefinition> = {
         oddsEndpoints: [],
         requiresActivator: false,
     }
-};
+});

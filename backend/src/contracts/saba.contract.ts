@@ -1,7 +1,7 @@
 // SABA contract scaffold
 import type { ProviderConfig, ProviderProfile } from '../providers/base.provider';
 
-export const SABA_CONTRACT: Partial<ProviderConfig> = {
+export const SABA_CONTRACT: Partial<ProviderConfig> = Object.freeze({
     name: 'SABA',
     profile: 'EVENT_DRIVEN' as ProviderProfile,
     whitelabels: ['SABA', 'SABASPORTS'],
@@ -22,6 +22,6 @@ export const SABA_CONTRACT: Partial<ProviderConfig> = {
     requiresActivator: true,
     keepalive: { intervalMs: 15000, timeoutMs: 60000 },
     balanceKeys: ['balance', 'wallet', 'credit'],
-};
+});
 
 export default SABA_CONTRACT;
