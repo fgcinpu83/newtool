@@ -279,7 +279,8 @@ export class WorkerService implements OnModuleInit {
         private decoder: UniversalDecoderService,
         private providerManager: ProviderSessionManager,
         private chromeManager: ChromeConnectionManager,
-        private commandRouter: CommandRouterService
+        private commandRouter: CommandRouterService,
+        private internalBus: InternalEventBusService
     ) {
         // 🛡️ Initialize Provider Session Manager
         // Already initialized in constructor
@@ -383,11 +384,11 @@ export class WorkerService implements OnModuleInit {
 
         registerHandler('FORCE_ACTIVATE', async () => {
             const connCount = (this.gateway.server as any)?.clients?.size || 0;
-            const msg = `[WORKER] 🚀 FORCE_RECOVERY: Sending ACTIVATE_MARKET_AUTO (Conns: ${connCount})`;
+            const msg = `[WORKER] 🚀 FORCE_RECOVERY: Requesting ACTIVATE_MARKET_AUTO (Conns: ${connCount})`;
             console.log(msg);
             try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { }
             // Ask BrowserAutomationService to emit browser-level command
-            await this.commandRouter.route({ type: 'BROWSER_CMD', payload: { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' } })
+            this.internalBus.publish('REQUEST_BROWSER_CMD', { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' });
         })
 
         registerHandler('ENABLE_DEBUG', async () => { const msg = `[WORKER] 🐞 DEBUG MODE ENABLED (60s)`; console.log(msg); try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { } (this as any).tempDebug = true; setTimeout(()=>{(this as any).tempDebug=false; const msgOff=`[WORKER] 🐞 DEBUG MODE DISABLED`; console.log(msgOff); try{ fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msgOff}\n`); }catch(e){} },60000) })
@@ -397,9 +398,9 @@ export class WorkerService implements OnModuleInit {
             this.discoveryService.clearAllMemory();
             this.resetAccount('A');
             this.resetAccount('B');
-            await this.commandRouter.route({ type: 'BROWSER_CMD', payload: { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' } });
+            this.internalBus.publish('REQUEST_BROWSER_CMD', { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' });
             const scrapeScript = `...`;
-            await this.commandRouter.route({ type: 'BROWSER_CMD', payload: { command: 'EXECUTE_SCRIPT', script: scrapeScript } });
+            this.internalBus.publish('REQUEST_BROWSER_CMD', { command: 'EXECUTE_SCRIPT', script: scrapeScript });
             this.gateway.sendUpdate('system_log', { level: 'info', message: '🚀 Hard Recovery: Registries purged, re-syncing from browsers...' });
         })
 

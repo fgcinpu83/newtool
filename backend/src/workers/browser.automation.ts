@@ -15,6 +15,7 @@ import { AppGateway } from '../gateway.module';
 import { RedisService } from '../shared/redis.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 import { CommandRouterService } from '../command/command-router.service';
+import { InternalEventBusService } from '../events/internal-event-bus.service';
 
 @Injectable()
 export class BrowserAutomationService implements OnModuleInit {
@@ -33,6 +34,7 @@ export class BrowserAutomationService implements OnModuleInit {
         private redis: RedisService,
         private chromeManager: ChromeConnectionManager,
         private commandRouter: CommandRouterService,
+        private internalBus: InternalEventBusService,
     ) {}
 
     async onModuleInit() {
@@ -50,7 +52,7 @@ export class BrowserAutomationService implements OnModuleInit {
             this.logger.log(`[OBSERVE] Chrome connection unavailable on port 9222 - state: ${infoA.state}`);
         }
 
-        // Register as owner for browser-level commands
+        // Register as owner for browser-level commands (external only)
         this.commandRouter.register('BROWSER_CMD', async (c) => {
             try {
                 // Pass-through to extension via gateway
@@ -65,6 +67,24 @@ export class BrowserAutomationService implements OnModuleInit {
         this.commandRouter.register('FOCUS_TAB', async (c) => { await this.focusTab(c.payload || {}); });
         this.commandRouter.register('CLOSE_BROWSER', async (c) => { await this.closeBrowserTabs(c.payload || {}); });
         this.commandRouter.register('CHECK_CHROME', async (c) => { await this.reportChromeStatus(); });
+
+        // Internal event subscriptions (WorkerService -> BrowserAutomationService)
+        this.internalBus.on('REQUEST_BROWSER_CMD', (payload: any) => {
+            try {
+                this.logger.log(`Handling internal REQUEST_BROWSER_CMD: ${JSON.stringify(payload)}`);
+                this.gateway.sendUpdate('browser:command', payload);
+            } catch (e) { this.logger.error('Internal REQUEST_BROWSER_CMD failed', e as any) }
+        });
+
+        this.internalBus.on('REQUEST_OPEN_BROWSER', (payload: any) => {
+            try {
+                this.openBrowserTab(payload || {});
+            } catch (e) { this.logger.error('Internal REQUEST_OPEN_BROWSER failed', e as any) }
+        });
+
+        this.internalBus.on('REQUEST_CLOSE_BROWSER', (payload: any) => {
+            try { this.closeBrowserTabs(payload || {}); } catch (e) { this.logger.error('Internal REQUEST_CLOSE_BROWSER failed', e as any) }
+        });
     }
 
     // ─── COMMAND ROUTER ─────────────────────────────

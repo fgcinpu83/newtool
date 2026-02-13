@@ -17,6 +17,11 @@ export class CommandRouterService {
 
   async route(cmd: CommandPayload) {
     if (!cmd || !cmd.type) return
+    // Prevent router re-entry: if route is already processing, block re-entry
+    if ((this as any).__routing) {
+      this.logger.error(`Router re-entry detected for command: ${cmd.type} - blocking to prevent recursive routing`)
+      return { success: false, message: 'Router re-entry blocked', type: cmd.type }
+    }
     const handler = this.owners.get(cmd.type)
     if (!handler) {
       this.logger.warn(`No owner for command: ${cmd.type} - rejecting`)
@@ -24,10 +29,13 @@ export class CommandRouterService {
     }
     try {
       this.logger.log(`Routing command: ${cmd.type}`)
+      (this as any).__routing = true
       const res = await handler(cmd)
+      (this as any).__routing = false
       return { success: true, result: res }
     } catch (e: any) {
       this.logger.error(`Handler for ${cmd.type} failed: ${e?.message || e}`)
+      (this as any).__routing = false
       return { success: false, message: e?.message || String(e) }
     }
   }
