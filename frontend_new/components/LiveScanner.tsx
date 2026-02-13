@@ -4,40 +4,14 @@ import React from 'react'
  import { BackendState } from '../types'
 
 export default function LiveScanner({ state }: { state: BackendState }) {
-  // demo data shown when backend hasn't provided opportunities yet
-  const demoOps = [
-    {
-      id: 'demo-a',
-      providerA: 'QQ11/abc',
-      providerB: 'nov/365',
-      oddsA: 0.75,
-      oddsB: 1.35,
-      profitPercent: 5,
-      status: 'ACTIVE',
-      timestamp: new Date().toISOString(),
-      description: 'Real Madrid',
-    },
-    {
-      id: 'demo-b',
-      providerA: 'nov/365',
-      providerB: 'QQ11/abc',
-      oddsA: 1.35,
-      oddsB: 0.75,
-      profitPercent: 5,
-      status: 'ACTIVE',
-      timestamp: new Date().toISOString(),
-      description: 'Barcelona',
-    },
-  ]
-
   const hasReal = state.opportunities && state.opportunities.length > 0
-  const ops = hasReal ? state.opportunities : demoOps
+  const ops = hasReal ? state.opportunities : []
 
   return (
     <div className="bg-surface-dark border border-border-dark rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-semibold text-white">LIVE SCANNER</div>
-        <div className="text-xs text-slate-400">{hasReal ? 'Running' : 'Demo'}</div>
+        <div className="text-xs text-slate-400">{hasReal ? 'Running' : 'No data'}</div>
       </div>
 
       <div className="overflow-auto max-h-64">
@@ -55,6 +29,13 @@ export default function LiveScanner({ state }: { state: BackendState }) {
                 {(() => {
                   const rows = [] as JSX.Element[]
                   const opsLocal = ops
+                  if (!opsLocal || opsLocal.length === 0) {
+                    return [(
+                      <tr key="no-ops">
+                        <td colSpan={5} className="py-6 text-center text-slate-400">No opportunities available</td>
+                      </tr>
+                    )]
+                  }
                   for (let i = 0; i < opsLocal.length; i += 2) {
                     const a = opsLocal[i]
                     const b = opsLocal[i + 1]
