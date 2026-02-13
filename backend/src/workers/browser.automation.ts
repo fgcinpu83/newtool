@@ -14,6 +14,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AppGateway } from '../gateway.module';
 import { RedisService } from '../shared/redis.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
+import { CommandRouterService } from '../command/command-router.service';
 
 @Injectable()
 export class BrowserAutomationService implements OnModuleInit {
@@ -31,6 +32,7 @@ export class BrowserAutomationService implements OnModuleInit {
         private gateway: AppGateway,
         private redis: RedisService,
         private chromeManager: ChromeConnectionManager,
+        private commandRouter: CommandRouterService,
     ) {}
 
     async onModuleInit() {
@@ -48,7 +50,21 @@ export class BrowserAutomationService implements OnModuleInit {
             this.logger.log(`[OBSERVE] Chrome connection unavailable on port 9222 - state: ${infoA.state}`);
         }
 
-        this.gateway.commandEvents.on('command', (data) => this.handleCommand(data));
+        // Register as owner for browser-level commands
+        this.commandRouter.register('BROWSER_CMD', async (c) => {
+            try {
+                // Pass-through to extension via gateway
+                this.gateway.sendUpdate('browser:command', c.payload);
+            } catch (e) { this.logger.error('BROWSER_CMD failed', e) }
+        });
+
+        this.commandRouter.register('OPEN_BROWSER', async (c) => {
+            await this.openBrowserTab(c.payload || {});
+        });
+
+        this.commandRouter.register('FOCUS_TAB', async (c) => { await this.focusTab(c.payload || {}); });
+        this.commandRouter.register('CLOSE_BROWSER', async (c) => { await this.closeBrowserTabs(c.payload || {}); });
+        this.commandRouter.register('CHECK_CHROME', async (c) => { await this.reportChromeStatus(); });
     }
 
     // ─── COMMAND ROUTER ─────────────────────────────

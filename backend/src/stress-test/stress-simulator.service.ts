@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AppGateway } from '../gateway.module';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { NormalizationService } from '../normalization/normalization.service';
+import { CommandRouterService } from '../command/command-router.service';
 import * as v8 from 'v8';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -24,17 +25,13 @@ export class StressSimulatorService {
     constructor(
         private gateway: AppGateway,
         private discovery: DiscoveryService,
-        private normService: NormalizationService
+        private normService: NormalizationService,
+        private commandRouter: CommandRouterService
     ) { }
 
     onModuleInit() {
-        this.gateway.commandEvents.on('command', (data) => {
-            if (data.type === 'START_STRESS') {
-                this.startSimulation();
-            } else if (data.type === 'STOP_STRESS') {
-                this.stopSimulation();
-            }
-        });
+        this.commandRouter.register('START_STRESS', async () => { this.startSimulation(); });
+        this.commandRouter.register('STOP_STRESS', async () => { this.stopSimulation(); });
     }
 
     async startSimulation() {

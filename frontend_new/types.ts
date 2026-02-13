@@ -30,6 +30,8 @@ export interface Opportunity {
   oddsB: number
   profitPercent: number
   status: 'ACTIVE' | 'PENDING' | 'INACTIVE' | string
+  // optional timestamp when opportunity was observed (ISO string or numeric ms)
+  timestamp?: string | number
   description?: string
 }
 

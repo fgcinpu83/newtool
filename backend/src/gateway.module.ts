@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Socket } from 'socket.io';
 import { ProviderSessionManager } from './managers/provider-session.manager';
+import { CommandRouterService } from './command/command-router.service';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnApplicationBootstrap {
@@ -24,7 +25,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     // 🛡️ CDP ISOLATION: Track recent injected events to prevent duplication
     private recentInjectedEvents: Record<string, number> = {};
 
-    constructor(private providerManager: ProviderSessionManager) { }
+    constructor(private providerManager: ProviderSessionManager, private commandRouter: CommandRouterService) { }
 
     onModuleInit() {
         console.log('Gateway initialized');
@@ -136,6 +137,21 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
         client.emit('pong', { ok: true, ts: Date.now() });
     }
 
+    // Receive generic commands from frontend and forward to internal listeners
+    @SubscribeMessage('command')
+    handleCommand(@MessageBody() data: any, @ConnectedSocket() client: any) {
+        // normalize payload shape
+        const cmd = data && data.type ? data : (data && data.command ? { type: data.command, payload: data.payload } : null)
+        if (!cmd) return;
+        console.log(`[GATEWAY] ← command: ${cmd.type}`);
+        // Attach client identity if present
+        if (client && (client as any).gravityAccount) cmd.originAccount = (client as any).gravityAccount
+        // Route to CommandRouterService (business logic lives there)
+        try {
+            this.commandRouter.route(cmd)
+        } catch (e) { console.error('[GATEWAY] Command routing failed', e) }
+    }
+
     // Basic methods used by WorkerService - updated for Socket.IO
     sendUpdate(event: string, data: any) {
         if (!this.server) return;
@@ -149,7 +165,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 }
 
 @Module({
-    providers: [AppGateway],
-    exports: [AppGateway]
+    imports: [],
+    providers: [AppGateway, CommandRouterService],
+    exports: [AppGateway, CommandRouterService]
 })
 export class GatewayModule { }

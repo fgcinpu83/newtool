@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { AppGateway } from '../gateway.module';
 import { NormalizationService } from '../normalization/normalization.service';
 import { RedisService } from '../shared/redis.service';
+import { CommandRouterService } from '../command/command-router.service';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -65,18 +66,17 @@ export class PairingService implements OnModuleInit {
     constructor(
         private gateway: AppGateway,
         private normalization: NormalizationService,
-        private redisService: RedisService
+        private redisService: RedisService,
+        private commandRouter: CommandRouterService
     ) {
-        // Listen for force commands
-        this.gateway.commandEvents.on('command', (cmd: any) => {
-            if (cmd.type === 'REFRESH_SCANNER') {
-                console.log('[PAIRING-CMD] 🔄 Received REFRESH_SCANNER - Broadcasting all pairs');
-                this.broadcastAllPairs();
-            }
-            if (cmd.type === 'BYPASS_PROFIT') {
-                console.log('[PAIRING-CMD] 🔓 BYPASS_PROFIT active for 30s');
-                this.bypassProfitUntil = Date.now() + 30000;
-            }
+        // Register commands owned/observed by pairing service
+        this.commandRouter.register('REFRESH_SCANNER', async () => {
+            console.log('[PAIRING-CMD] 🔄 Received REFRESH_SCANNER - Broadcasting all pairs');
+            this.broadcastAllPairs();
+        });
+        this.commandRouter.register('BYPASS_PROFIT', async () => {
+            console.log('[PAIRING-CMD] 🔓 BYPASS_PROFIT active for 30s');
+            this.bypassProfitUntil = Date.now() + 30000;
         });
     }
 

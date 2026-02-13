@@ -33,7 +33,10 @@ export function connect(onState: MessageHandler) {
   ;(s as any).__newtool_listeners_registered = true
 
   s.on('connect', () => {
-    // no automatic behavior; let backend push full state via `backend_state`
+    // Request immediate status snapshot on connect
+    try {
+      s.emit('command', { type: 'GET_STATUS' })
+    } catch (e) { }
   })
 
   s.on('disconnect', () => {
@@ -47,6 +50,24 @@ export function connect(onState: MessageHandler) {
       // swallow - keep UI stable
     }
   })
+
+  // Forward UI-level config events to backend as socket commands
+  if (typeof window !== 'undefined') {
+    window.addEventListener('app:apply-config', (ev: any) => {
+      try {
+        const cfg = ev?.detail
+        if (cfg) s.emit('command', { type: 'UPDATE_CONFIG', payload: cfg })
+      } catch (e) { }
+    })
+
+    // Optional debug telemetry channel from UI -> backend
+    window.addEventListener('app:log-opps', (ev: any) => {
+      try {
+        const payload = ev?.detail
+        if (payload) s.emit('command', { type: 'LOG_OPPS', payload })
+      } catch (e) { }
+    })
+  }
 
   return s
 }

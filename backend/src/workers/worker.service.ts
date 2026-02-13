@@ -26,6 +26,7 @@ import { parseProvider } from '../contracts';
 import { EventIdentity } from '../utils/identity.utils';
 import { SystemConfig, ProviderType, getAccountForProvider, detectProviderFromUrl } from '../providers/account-binding.config';
 import { ProviderSessionManager } from '../managers/provider-session.manager';
+import { CommandRouterService } from '../command/command-router.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 
 // ðŸ”¥ PROVIDER STATE MACHINE
@@ -277,7 +278,8 @@ export class WorkerService implements OnModuleInit {
         private registry: ContractRegistry,
         private decoder: UniversalDecoderService,
         private providerManager: ProviderSessionManager,
-        private chromeManager: ChromeConnectionManager
+        private chromeManager: ChromeConnectionManager,
+        private commandRouter: CommandRouterService
     ) {
         // 🛡️ Initialize Provider Session Manager
         // Already initialized in constructor
@@ -331,175 +333,77 @@ export class WorkerService implements OnModuleInit {
 
         console.log('[WORKER] Now listening for endpoint_captured events');
 
-        // ðŸ”¥ SYNC CONFIG 
-        // 🔒 v3.1 FIX: SINGLE AUTHORITY FOR TOGGLE_ACCOUNT
-        this.gateway.commandEvents.on('command', async (data) => {
-            // 🛡️ COMMAND VALIDATOR - Reject duplicates within cooldown
-            const commandKey = `${data.type}_${JSON.stringify(data.payload || {})}`;
-            const now = Date.now();
-            if (this.lastCommandTime[commandKey] && (now - this.lastCommandTime[commandKey]) < this.COMMAND_COOLDOWN) {
-                console.log(`[WORKER] 🚫 DUPLICATE COMMAND REJECTED: ${commandKey}`);
-                return;
-            }
-            this.lastCommandTime[commandKey] = now;
+        // Register command ownership with CommandRouterService
+        const registerHandler = (cmdType: string, handler: (c:any)=>Promise<any>|any) => {
+            try {
+                this.commandRouter.register(cmdType, async (c: any) => {
+                    // Duplicate command guard
+                    const commandKey = `${c.type}_${JSON.stringify(c.payload || {})}`;
+                    const now = Date.now();
+                    if (this.lastCommandTime[commandKey] && (now - this.lastCommandTime[commandKey]) < this.COMMAND_COOLDOWN) {
+                        console.log(`[WORKER] 🚫 DUPLICATE COMMAND REJECTED: ${commandKey}`);
+                        return;
+                    }
+                    this.lastCommandTime[commandKey] = now;
+                    return handler(c)
+                })
+            } catch (e) { console.error('Register command failed', e) }
+        }
 
-            if (data.type === 'TOGGLE_ACCOUNT') {
-                const { account, active } = data.payload;
+        // Core ownerships
+        registerHandler('TOGGLE_ACCOUNT', async (data) => {
+            const { account, active } = data.payload || {}
+            console.log(`[WORKER] 🔄 TOGGLE_ACCOUNT: ${account} -> ${active ? 'ON' : 'OFF'}`);
+            if (account === 'A') {
+                this.config.accountA_active = active;
+                if (!active) this.resetAccount('A');
+            }
+            if (account === 'B') {
+                this.config.accountB_active = active;
+                if (!active) this.resetAccount('B');
+            }
+            try { await this.redisService.setConfig(this.config) } catch (e) {}
+            this.broadcastStatus();
+            await this.handleToggleFsm(account, active);
+        })
 
-                console.log(`[WORKER] 🔄 TOGGLE_ACCOUNT: ${account} -> ${active ? 'ON' : 'OFF'}`);
+        registerHandler('GET_STATUS', async () => { this.broadcastStatus(); })
 
-                // 1. Update local state
-                if (account === 'A') {
-                    this.config.accountA_active = active;
-                    if (!active) this.resetAccount('A');
-                }
-                if (account === 'B') {
-                    this.config.accountB_active = active;
-                    if (!active) this.resetAccount('B');
-                }
+        registerHandler('UPDATE_CONFIG', async (data) => { this.config = { ...this.config, ...data.payload }; try { await this.redisService.setConfig(this.config) } catch (e){}; this.broadcastStatus(); })
 
-                // 2. Sync to Redis immediately
-                try {
-                    await this.redisService.setConfig(this.config);
-                    console.log(`[WORKER] ✅ Config synced to Redis: ${account}_active=${active}`);
-                } catch (e) {
-                    console.error('[WORKER] ⚠️ Redis sync failed, using local config');
-                }
+        registerHandler('LOG_OPPS', async (data) => { console.log('[WORKER] [LOG_OPPS] Received telemetry payload'); try{ this.gateway.sendUpdate('debug:opps', { payload: data.payload, ts: Date.now() }) }catch(e){} })
 
-                // 3. Broadcast status
-                this.broadcastStatus();
+        // Misc / convenience commands still owned by WorkerService
+        registerHandler('toggle_on', async () => { if (this.toggleFsm.A !== ToggleState.IDLE && this.toggleFsm.B !== ToggleState.IDLE) return; await this.handleToggleFsm('A', true); await this.handleToggleFsm('B', true); this.config.accountA_active = true; this.config.accountB_active = true; this.broadcastStatus() })
+        registerHandler('toggle_off', async () => { await this.handleToggleFsm('A', false); await this.handleToggleFsm('B', false); this.config.accountA_active = false; this.config.accountB_active = false; this.broadcastStatus() })
 
-                // 🛡️ FINAL FIX: TOGGLE FSM - Atomic state machine transitions
-                await this.handleToggleFsm(account, active);
-            }
-            else if (data.type === 'toggle_on') {
-                console.log(`[WORKER] 🔄 TOGGLE_ON RECEIVED`);
-                // Validate: Only allow if system is IDLE
-                if (this.toggleFsm.A !== ToggleState.IDLE && this.toggleFsm.B !== ToggleState.IDLE) {
-                    console.log(`[WORKER] 🚫 TOGGLE_ON REJECTED: System not IDLE`);
-                    return;
-                }
-                // Start both accounts
-                await this.handleToggleFsm('A', true);
-                await this.handleToggleFsm('B', true);
-                this.config.accountA_active = true;
-                this.config.accountB_active = true;
-                this.broadcastStatus();
-            }
-            else if (data.type === 'toggle_off') {
-                console.log(`[WORKER] 🔄 TOGGLE_OFF RECEIVED`);
-                // Always allow toggle off
-                await this.handleToggleFsm('A', false);
-                await this.handleToggleFsm('B', false);
-                this.config.accountA_active = false;
-                this.config.accountB_active = false;
-                this.broadcastStatus();
-            }
+        registerHandler('FORCE_RESET', async () => { this.discoveryService.clearAllMemory(); this.gateway.sendUpdate('system_log', { level: 'warn', message: '[SYSTEM] Discovery registry wiped. Awaiting fresh data pulses.' }) })
 
-            else if (data.type === 'UPDATE_CONFIG') {
-                this.config = { ...this.config, ...data.payload };
-                try {
-                    await this.redisService.setConfig(this.config);
-                } catch (e) { }
-                this.broadcastStatus();
-            }
-            else if (data.type === 'FORCE_LAUNCH') {
-                console.log('🚀 [WORKER] FORCE_LAUNCH detected. BrowserAutomation will handle execution.');
-            }
-            else if (data.type === 'FORCE_RESET') {
-                console.log('🚨 [FORCE-RESET] Wiping discovery registries and resetting events count.');
-                this.discoveryService.clearAllMemory();
-                this.gateway.sendUpdate('system_log', {
-                    level: 'warn',
-                    message: '[SYSTEM] Discovery registry wiped. Awaiting fresh data pulses.'
-                });
-            }
-            else if (data.type === 'RELOAD_EXTENSION' || data.type === 'RELOAD_TAB') {
-                console.log('🚨 [RELOAD-PROTOCOL] Forcing extension reload on all browser tabs.');
-                this.gateway.emitBrowserCommand('A', 'RELOAD_EXTENSION');
-                this.gateway.emitBrowserCommand('B', 'RELOAD_EXTENSION');
-            }
-            else if (data.type === 'PANIC_STOP') {
-                this.emergencyStop();
-            }
-            // 🛡️ v11.0: OPEN_BROWSER is now ONLY handled by BrowserAutomationService
-            // Worker just tracks state for status updates
-            else if (data.type === 'OPEN_BROWSER') {
-                const { account } = data.payload;
-                this.pipelineStage[account] = 'BROWSER_INIT';
-                console.log(`[WORKER] 📍 Browser command received for Account ${account} (handled by BrowserAutomation)`);
-            }
-            else if (data.type === 'FORCE_ACTIVATE') {
-                const connCount = (this.gateway.server as any)?.clients?.size || 0;
-                const msg = `[WORKER] 🚀 FORCE_RECOVERY: Sending ACTIVATE_MARKET_AUTO (Conns: ${connCount})`;
-                console.log(msg);
-                try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { }
-                this.gateway.sendUpdate('browser:command', { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' });
-            }
-            else if (data.type === 'ENABLE_DEBUG') {
-                const msg = `[WORKER] 🐞 DEBUG MODE ENABLED (60s)`;
-                console.log(msg);
-                try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { }
-                (this as any).tempDebug = true;
-                setTimeout(() => {
-                    (this as any).tempDebug = false;
-                    const msgOff = `[WORKER] 🐞 DEBUG MODE DISABLED`;
-                    console.log(msgOff);
-                    try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msgOff}\n`); } catch (e) { }
-                }, 60000);
-            }
-            else if (data.type === 'FLUSH_REGISTRY_B') {
-                console.log('🧹 [GARBAGE-PURGE] Flushing Registry B...');
-                this.discoveryService.flushRegistryB();
-            }
-            else if (data.type === 'HARD_RECOVERY') {
-                console.log('🚨 [HARD-RECOVERY] Executing memory purge and fresh pull...');
-                this.discoveryService.clearAllMemory();
-                this.resetAccount('A');
-                this.resetAccount('B');
+        registerHandler('PANIC_STOP', async () => { this.emergencyStop() })
 
-                // Trigger fresh pulls
-                this.gateway.sendUpdate('browser:command', { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' });
+        registerHandler('FORCE_ACTIVATE', async () => {
+            const connCount = (this.gateway.server as any)?.clients?.size || 0;
+            const msg = `[WORKER] 🚀 FORCE_RECOVERY: Sending ACTIVATE_MARKET_AUTO (Conns: ${connCount})`;
+            console.log(msg);
+            try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { }
+            // Ask BrowserAutomationService to emit browser-level command
+            await this.commandRouter.route({ type: 'BROWSER_CMD', payload: { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' } })
+        })
 
-                // Trigger Balance Scrape via DOM
-                const scrapeScript = `
-                    (function() {
-                        try {
-                            // AFB88 Balance Scrape
-                            const afbBal = document.querySelector('.balance-amount')?.innerText || 
-                                         document.querySelector('#balance2D')?.innerText;
-                            // ISPORT Balance Scrape
-                            const isportBal = document.querySelector('#spanBalance')?.innerText || 
-                                           document.querySelector('.balance-text')?.innerText;
-                            
-                            const balance = afbBal || isportBal;
-                            if (balance) {
-                                console.log('[EXT-SCRAPE] Found balance:', balance);
-                                console.log(\`[OBSERVE] Balance visibility confirmed - value: \${balance}\`);
-                                // This would normally be sent via sniffer
-                            } else {
-                                console.log('[OBSERVE] Balance visibility check failed - no DOM selectors found');
-                            }
-                        } catch(e) {}
-                    })()
-                `;
-                this.gateway.sendUpdate('browser:command', { command: 'EXECUTE_SCRIPT', script: scrapeScript });
+        registerHandler('ENABLE_DEBUG', async () => { const msg = `[WORKER] 🐞 DEBUG MODE ENABLED (60s)`; console.log(msg); try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { } (this as any).tempDebug = true; setTimeout(()=>{(this as any).tempDebug=false; const msgOff=`[WORKER] 🐞 DEBUG MODE DISABLED`; console.log(msgOff); try{ fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msgOff}\n`); }catch(e){} },60000) })
 
-                this.gateway.sendUpdate('system_log', { level: 'info', message: '🚀 Hard Recovery: Registries purged, re-syncing from browsers...' });
-            }
-            else if (data.type === 'BYPASS_FILTERS') {
-                const msg = `[WORKER] 🔓 FILTER BYPASS ENABLED (600s)`;
-                console.log(msg);
-                try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { }
-                this.discoveryService.setBypass(true);
-                setTimeout(() => {
-                    this.discoveryService.setBypass(false);
-                    const msgOff = `[WORKER] 🔒 FILTER BYPASS DISABLED`;
-                    console.log(msgOff);
-                    try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msgOff}\n`); } catch (e) { }
-                }, 600000);
-            }
-        });
+        registerHandler('HARD_RECOVERY', async () => {
+            console.log('🚨 [HARD-RECOVERY] Executing memory purge and fresh pull...');
+            this.discoveryService.clearAllMemory();
+            this.resetAccount('A');
+            this.resetAccount('B');
+            await this.commandRouter.route({ type: 'BROWSER_CMD', payload: { command: 'ACTIVATE_MARKET_AUTO', account: 'ALL' } });
+            const scrapeScript = `...`;
+            await this.commandRouter.route({ type: 'BROWSER_CMD', payload: { command: 'EXECUTE_SCRIPT', script: scrapeScript } });
+            this.gateway.sendUpdate('system_log', { level: 'info', message: '🚀 Hard Recovery: Registries purged, re-syncing from browsers...' });
+        })
+
+        registerHandler('BYPASS_FILTERS', async () => { const msg = `[WORKER] 🔓 FILTER BYPASS ENABLED (600s)`; console.log(msg); try{ fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msg}\n`); }catch(e){} this.discoveryService.setBypass(true); setTimeout(()=>{ this.discoveryService.setBypass(false); const msgOff=`[WORKER] 🔒 FILTER BYPASS DISABLED`; console.log(msgOff); try{ fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${msgOff}\n`); }catch(e){} },600000) })
     }
 
 
@@ -1690,6 +1594,27 @@ export class WorkerService implements OnModuleInit {
 
         const statusMsg = `[STATUS-SYNC] ID=${this.instanceId} Broadcasting A_active=${this.config.accountA_active} B_active=${this.config.accountB_active}`;
         try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${statusMsg}\n`); } catch (e) { }
+        // --- Also emit full backend_state for frontend consumption (keeps UI authoritative sync)
+        try {
+            const backendState = {
+                connection: {
+                    backendConnected: true,
+                    chromeConnected: this.chromeReady,
+                    injectedReady: this.injectedReady,
+                    cdpReady: this.cdpReady,
+                },
+                fsm: { state: (this.toggleFsm.A === ToggleState.RUNNING || this.toggleFsm.B === ToggleState.RUNNING) ? 'RUNNING' : 'IDLE' },
+                gravity: { mode: 'STANDBY', activeOpportunities: discoveryStats.confirmedPairs || 0 },
+                sensors: Object.keys(this.providerStatus).map(k => ({ id: k, provider: (providerNames[k] || 'GENERIC'), lastPacket: String(Date.now()) })),
+                opportunities: [],
+                executionHistory: [],
+                logs: []
+            } as any;
+
+            this.gateway.sendUpdate('backend_state', backendState);
+        } catch (e) {
+            // non-fatal
+        }
     }
     
     /**

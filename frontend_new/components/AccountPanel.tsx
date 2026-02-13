@@ -17,11 +17,11 @@ import { sendCommand } from '../websocket/client'
     const initial = (isA ? (state as any).accountA_active : (state as any).accountB_active) || false
     const [enabled, setEnabled] = useState<boolean>(initial)
 
-    // keep toggle in sync with backend updates
+    // keep toggle in sync with backend updates — derive single backend value
+    const backendVal = isA ? (state as any).accountA_active : (state as any).accountB_active
     React.useEffect(() => {
-      const backendVal = isA ? (state as any).accountA_active : (state as any).accountB_active
-      if (typeof backendVal === 'boolean' && backendVal !== enabled) setEnabled(backendVal)
-    }, [(state as any).accountA_active, (state as any).accountB_active])
+      if (typeof backendVal === 'boolean') setEnabled(backendVal)
+    }, [backendVal])
 
     const handleClick = () => {
       // send canonical per-account toggle to backend
@@ -76,18 +76,9 @@ import { sendCommand } from '../websocket/client'
             </div>
           </div>
 
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              className="sr-only peer"
-              type="checkbox"
-              checked={(isA ? (state as any).accountA_active : (state as any).accountB_active) || false}
-              onChange={(e) => {
-                const active = e.target.checked
-                sendCommand('TOGGLE_ACCOUNT', { account: isA ? 'A' : 'B', active })
-              }}
-            />
-            <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-success"></div>
-          </label>
+          <div>
+            <AccountToggle isA={isA} />
+          </div>
         </div>
 
         <div className="relative bg-background-dark rounded border border-border-dark p-2 flex items-center gap-2 mt-3">
@@ -106,29 +97,30 @@ import { sendCommand } from '../websocket/client'
           </div>
         </div>
 
-        <div className="flex items-center gap-3 justify-between bg-background-dark/30 p-2 rounded border border-border-dark/30 mt-3">
-          <div className="text-[10px] text-slate-400 uppercase font-medium mr-2">Endpoints</div>
-          <div className="flex gap-3">
-            <div className="flex flex-col items-center gap-1 group">
-              <div className="size-2.5 rounded-full bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
-              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">LOGIN</span>
+        <div className="flex flex-col items-start gap-1 bg-background-dark/30 p-2 rounded border border-border-dark/30 mt-3">
+          <div className="grid grid-cols-5 gap-4 w-full items-center">
+            <div className="flex justify-center">
+              <div className={`w-2.5 h-2.5 rounded-full ${sabaStatus === 'ready' ? 'bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]' : sabaStatus === 'stale' ? 'bg-warning' : sabaStatus === 'error' ? 'bg-danger' : 'bg-slate-600'}`}></div>
             </div>
-            <div className="flex flex-col items-center gap-1 group">
-              <div className="size-2.5 rounded-full bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
-              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">FEED</span>
+            <div className="flex justify-center">
+              <div className={`w-2.5 h-2.5 rounded-full ${afbStatus === 'ready' ? 'bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]' : afbStatus === 'stale' ? 'bg-warning' : afbStatus === 'error' ? 'bg-danger' : 'bg-slate-600'}`}></div>
             </div>
-            <div className="flex flex-col items-center gap-1 group">
-              <div className="size-2.5 rounded-full bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]"></div>
-              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">SLIP</span>
+            <div className="flex justify-center">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-600"></div>
             </div>
-            <div className="flex flex-col items-center gap-1 group">
-              <div className="size-2.5 rounded-full bg-warning shadow-[0_0_5px_rgba(245,158,11,0.6)]"></div>
-              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">CHECK</span>
+            <div className="flex justify-center">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-600"></div>
             </div>
-            <div className="flex flex-col items-center gap-1 group">
-              <div className="size-2.5 rounded-full bg-slate-600"></div>
-              <span className="text-[9px] text-slate-500 group-hover:text-slate-300">ORDER</span>
+            <div className="flex justify-center">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-600"></div>
             </div>
+          </div>
+          <div className="grid grid-cols-5 gap-4 w-full mt-1 text-center">
+            <div className="text-[10px] text-slate-400 uppercase font-medium">SABA</div>
+            <div className="text-[10px] text-slate-400 uppercase font-medium">AFB88</div>
+            <div></div>
+            <div></div>
+            <div></div>
           </div>
         </div>
       </div>

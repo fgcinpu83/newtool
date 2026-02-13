@@ -17,11 +17,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-200 font-display h-screen flex flex-col overflow-hidden`}>
+      <body className={`${inter.className} bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-200 font-display h-screen flex flex-col overflow-auto`}>
         <SystemBootstrap>
           <TopHeader />
 
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1">
             <aside className="w-80 flex flex-col border-r border-border-dark bg-surface-dark overflow-y-auto custom-scroll shrink-0 z-10">
               <div className="p-5 space-y-6">
                 <SidebarFilters />
@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </aside>
 
-            <main className="flex-1 flex flex-col min-w-0 bg-background-dark/50 p-4 gap-4 overflow-hidden">
+            <main className="flex-1 flex flex-col min-w-0 bg-background-dark/50 p-4 gap-4 overflow-auto">
               <div className="max-w-7xl mx-auto w-full">
                 {children}
               </div>

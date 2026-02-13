@@ -3,18 +3,44 @@
 import React from 'react'
  import { BackendState } from '../types'
 
- export default function LiveScanner({ state }: { state: BackendState }) {
+export default function LiveScanner({ state }: { state: BackendState }) {
+  // demo data shown when backend hasn't provided opportunities yet
+  const demoOps = [
+    {
+      id: 'demo-a',
+      providerA: 'QQ11/abc',
+      providerB: 'nov/365',
+      oddsA: 0.75,
+      oddsB: 1.35,
+      profitPercent: 5,
+      status: 'ACTIVE',
+      timestamp: new Date().toISOString(),
+      description: 'Real Madrid',
+    },
+    {
+      id: 'demo-b',
+      providerA: 'nov/365',
+      providerB: 'QQ11/abc',
+      oddsA: 1.35,
+      oddsB: 0.75,
+      profitPercent: 5,
+      status: 'ACTIVE',
+      timestamp: new Date().toISOString(),
+      description: 'Barcelona',
+    },
+  ]
+
+  const hasReal = state.opportunities && state.opportunities.length > 0
+  const ops = hasReal ? state.opportunities : demoOps
+
   return (
     <div className="bg-surface-dark border border-border-dark rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-semibold text-white">LIVE SCANNER</div>
-        <div className="text-xs text-slate-400">{state.opportunities.length ? 'Running' : 'Idle'}</div>
+        <div className="text-xs text-slate-400">{hasReal ? 'Running' : 'Demo'}</div>
       </div>
 
       <div className="overflow-auto max-h-64">
-        {state.opportunities.length === 0 ? (
-          <div className="text-center text-slate-400 py-8">Waiting for data...</div>
-        ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="text-slate-400 text-xs">
@@ -28,16 +54,16 @@ import React from 'react'
             <tbody>
                 {(() => {
                   const rows = [] as JSX.Element[]
-                  const ops = state.opportunities
-                  for (let i = 0; i < ops.length; i += 2) {
-                    const a = ops[i]
-                    const b = ops[i + 1]
+                  const opsLocal = ops
+                  for (let i = 0; i < opsLocal.length; i += 2) {
+                    const a = opsLocal[i]
+                    const b = opsLocal[i + 1]
                     // first row of the pair: includes Profit cell with rowspan=2 when a pair exists
                     rows.push(
                       <tr key={a.id} className="border-t border-border-dark/40">
                         <td className="py-2 text-slate-400">{new Date(a.timestamp || Date.now()).toLocaleTimeString()}</td>
                         <td className="py-2 text-white">{a.providerA}</td>
-                        <td className="py-2 text-white">{a.providerA} vs {a.providerB}</td>
+                        <td className="py-2 text-white">{a.description || (a.providerA + ' vs ' + a.providerB)}</td>
                         <td className="py-2 text-right text-blue-400">{a.oddsA.toFixed(2)}</td>
                         {b ? (
                           <td rowSpan={2} className="py-2 text-right align-middle text-profit-blue font-bold">{Math.round(a.profitPercent)}%</td>
@@ -52,7 +78,7 @@ import React from 'react'
                         <tr key={b.id} className="border-t border-border-dark/40">
                           <td className="py-2 text-slate-400">{new Date(b.timestamp || Date.now()).toLocaleTimeString()}</td>
                           <td className="py-2 text-white">{b.providerA}</td>
-                          <td className="py-2 text-white">{b.providerA} vs {b.providerB}</td>
+                            <td className="py-2 text-white">{b.description || (b.providerA + ' vs ' + b.providerB)}</td>
                           <td className="py-2 text-right text-blue-400">{b.oddsA.toFixed(2)}</td>
                         </tr>
                       )
@@ -62,7 +88,6 @@ import React from 'react'
                 })()}
             </tbody>
           </table>
-        )}
       </div>
     </div>
   )
