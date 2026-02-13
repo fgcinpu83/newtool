@@ -28,6 +28,7 @@ import { SystemConfig, ProviderType, getAccountForProvider, detectProviderFromUr
 import { ProviderSessionManager } from '../managers/provider-session.manager';
 import { CommandRouterService } from '../command/command-router.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
+import { InternalEventBusService } from '../events/internal-event-bus.service';
 import { InternalFsmService, ToggleState } from '../events/internal-fsm.service';
 
 // ðŸ”¥ PROVIDER STATE MACHINE

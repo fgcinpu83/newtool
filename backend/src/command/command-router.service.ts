@@ -28,15 +28,15 @@ export class CommandRouterService {
       return { success: false, message: 'Unknown command', type: cmd.type }
     }
     try {
-      this.logger.log(`Routing command: ${cmd.type}`)
-      (this as any).__routing = true
-      const res = await handler(cmd)
-      (this as any).__routing = false
+      this.logger.log(`Routing command: ${cmd.type}`);
+      (this as any).__routing = true;
+      const res = await handler(cmd);
+      (this as any).__routing = false;
       return { success: true, result: res }
     } catch (e: any) {
-      this.logger.error(`Handler for ${cmd.type} failed: ${e?.message || e}`)
-      (this as any).__routing = false
-      return { success: false, message: e?.message || String(e) }
+      this.logger.error(`Handler for ${cmd.type} failed: ${e?.message || e}`);
+      (this as any).__routing = false;
+      return { success: false, message: e?.message || String(e) };
     }
   }
 
