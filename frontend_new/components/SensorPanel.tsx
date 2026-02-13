@@ -1,3 +1,5 @@
+ 'use client'
+
 import { BackendState } from '../types'
 
 function statusClassFromLastPacket(lp?: string) {

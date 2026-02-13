@@ -1,3 +1,5 @@
+ 'use client'
+
 import { BackendState } from '../types'
 
 export default function ExecutionHistory({ state }: { state: BackendState }) {
