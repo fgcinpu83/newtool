@@ -30,6 +30,7 @@ import { CommandRouterService } from '../command/command-router.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 import { InternalEventBusService } from '../events/internal-event-bus.service';
 import { InternalFsmService, ToggleState } from '../events/internal-fsm.service';
+import { AccountRuntimeManager } from '../runtime/account-runtime.manager'
 
 // ðŸ”¥ PROVIDER STATE MACHINE
 // Expanded to include Guardian states
@@ -74,6 +75,9 @@ export class WorkerService implements OnModuleInit {
     private tabToAccountMap: Map<string, 'A' | 'B'> = new Map(); // 🛰️ v3.2: Dynamic Tab Binding
     private lastOpenedAccount: string | null = null;
     private lastOpenedTime: number = 0;
+
+    // Non-destructive runtime isolation manager (Phase 1)
+    private runtimeManager: import('../runtime/account-runtime.manager').AccountRuntimeManager
 
     // 🛡️ v6.2 PIPELINE LIFECYCLE TRACKING
     private pipelineStage: Record<string, string> = {
@@ -279,6 +283,8 @@ export class WorkerService implements OnModuleInit {
         private internalBus: InternalEventBusService,
         private internalFsm: InternalFsmService
     ) {
+        // initialize runtime manager with shared FSM instance so transitions use same FSM
+        this.runtimeManager = new (require('../runtime/account-runtime.manager').AccountRuntimeManager)(this.internalFsm)
         // 🛡️ Initialize Provider Session Manager
         // Already initialized in constructor
 
@@ -350,19 +356,47 @@ export class WorkerService implements OnModuleInit {
 
         // Core ownerships
         registerHandler('TOGGLE_ACCOUNT', async (data) => {
-            const { account, active } = data.payload || {}
-            console.log(`[WORKER] 🔄 TOGGLE_ACCOUNT: ${account} -> ${active ? 'ON' : 'OFF'}`);
-            if (account === 'A') {
-                this.config.accountA_active = active;
-                if (!active) this.resetAccount('A');
+            const { accountId, enabled } = data.payload || {}
+            if (!accountId) return;
+            console.log(`[WORKER] 🔄 TOGGLE_ACCOUNT: ${accountId} -> ${enabled ? 'ON' : 'OFF'}`);
+
+            const runtime = this.runtimeManager.get(accountId);
+            try {
+                // Use the shared InternalFsmService directly to ensure the WorkerService
+                // is the visible caller in the stack (guard inside InternalFsmService).
+                if (enabled) {
+                    if (this.internalFsm.get(accountId) !== ToggleState.IDLE) return;
+                    // Request a one-time token and perform a trusted transition
+                    try {
+                        const t = this.internalFsm.issueToken()
+                        this.internalFsm.trustedTransition(accountId, ToggleState.STARTING, t)
+                    } catch (err) {
+                        console.error('[WORKER] Trusted transition failed', err)
+                    }
+                } else {
+                    if (this.internalFsm.get(accountId) !== ToggleState.RUNNING) return;
+                    try {
+                        const t = this.internalFsm.issueToken()
+                        this.internalFsm.trustedTransition(accountId, ToggleState.STOPPING, t)
+                    } catch (err) {
+                        console.error('[WORKER] Trusted transition failed', err)
+                    }
+                }
+            } catch (e) {
+                console.error(`[WORKER] FSM transition failed: ${(e as Error).message}`);
             }
-            if (account === 'B') {
-                this.config.accountB_active = active;
-                if (!active) this.resetAccount('B');
+
+            // keep existing config behavior in sync
+            if (accountId === 'A') {
+                this.config.accountA_active = !!enabled;
+                if (!enabled) this.resetAccount('A');
+            }
+            if (accountId === 'B') {
+                this.config.accountB_active = !!enabled;
+                if (!enabled) this.resetAccount('B');
             }
             try { await this.redisService.setConfig(this.config) } catch (e) {}
             this.broadcastStatus();
-            await this.handleToggleFsm(account, active);
         })
 
         registerHandler('GET_STATUS', async () => { this.broadcastStatus(); })
@@ -1594,22 +1628,12 @@ export class WorkerService implements OnModuleInit {
         try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${statusMsg}\n`); } catch (e) { }
         // --- Also emit full backend_state for frontend consumption (keeps UI authoritative sync)
         try {
-            const backendState = {
-                connection: {
-                    backendConnected: true,
-                    chromeConnected: this.chromeReady,
-                    injectedReady: this.injectedReady,
-                    cdpReady: this.cdpReady,
-                },
-                fsm: { state: (this.internalFsm.get('A') === ToggleState.RUNNING || this.internalFsm.get('B') === ToggleState.RUNNING) ? 'RUNNING' : 'IDLE' },
-                gravity: { mode: 'STANDBY', activeOpportunities: discoveryStats.confirmedPairs || 0 },
-                sensors: Object.keys(this.providerStatus).map(k => ({ id: k, provider: (providerNames[k] || 'GENERIC'), lastPacket: String(Date.now()) })),
-                opportunities: [],
-                executionHistory: [],
-                logs: []
-            } as any;
+            const accounts = this.runtimeManager.getAll().map(r => ({
+                accountId: r.accountId,
+                fsm: r.getState()
+            }));
 
-            this.gateway.sendUpdate('backend_state', backendState);
+            this.gateway.sendUpdate('backend_state', { accounts });
         } catch (e) {
             // non-fatal
         }
