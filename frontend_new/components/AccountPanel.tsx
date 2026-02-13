@@ -24,9 +24,13 @@ import { sendCommand } from '../websocket/client'
     }, [backendVal])
 
     const handleClick = () => {
-      // send canonical per-account toggle to backend
-      sendCommand('TOGGLE_ACCOUNT', { account: acc, active: !enabled })
-      setEnabled(!enabled)
+      try {
+        // send canonical per-account toggle to backend
+        sendCommand('TOGGLE_ACCOUNT', { account: acc, active: !enabled })
+        setEnabled(!enabled)
+      } catch (err) {
+        console.error('[AccountToggle] handleClick error', err)
+      }
     }
 
     return (
