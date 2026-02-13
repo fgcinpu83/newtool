@@ -28,18 +28,14 @@ import { SystemConfig, ProviderType, getAccountForProvider, detectProviderFromUr
 import { ProviderSessionManager } from '../managers/provider-session.manager';
 import { CommandRouterService } from '../command/command-router.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
+import { InternalFsmService, ToggleState } from '../events/internal-fsm.service';
 
 // ðŸ”¥ PROVIDER STATE MACHINE
 // Expanded to include Guardian states
 export type ProviderState = 'INACTIVE' | 'SESSION_BOUND' | 'LIVE' | 'IDLE' | 'RECOVERING' | 'DEAD' | 'HEARTBEAT_ONLY' | 'NO_DATA';
 
 // 🛡️ FINAL FIX: TOGGLE FSM (Atomic State Machine)
-export enum ToggleState {
-    IDLE = 'IDLE',           // No observer, safe state
-    STARTING = 'STARTING',   // Initializing observer, locked
-    RUNNING = 'RUNNING',     // Observer active
-    STOPPING = 'STOPPING'    // Shutting down observer, locked
-}
+// ToggleState is provided by InternalFsmService (single source of truth)
 
 interface ProviderEntry {
     name: string;
@@ -101,8 +97,7 @@ export class WorkerService implements OnModuleInit {
     private injectedReady: boolean = false;
     private cdpReady: boolean = false;
 
-    // 🛡️ FINAL FIX: TOGGLE FSM - Atomic state machine
-    private toggleFsm: Record<string, ToggleState> = { A: ToggleState.IDLE, B: ToggleState.IDLE };
+    // 🛡️ FINAL FIX: TOGGLE FSM - handled by InternalFsmService
 
     // 🛡️ COMMAND VALIDATOR - Prevent duplicate commands
     private lastCommandTime: Record<string, number> = {};
@@ -183,7 +178,7 @@ export class WorkerService implements OnModuleInit {
 
     /** Handle toggle with atomic FSM transitions */
     private async handleToggleFsm(account: string, active: boolean): Promise<void> {
-        const currentState = this.toggleFsm[account];
+        const currentState = this.internalFsm.get(account);
 
         // 🛡️ FSM: Reject operations during transitional states
         if (currentState === ToggleState.STARTING || currentState === ToggleState.STOPPING) {
@@ -255,9 +250,9 @@ export class WorkerService implements OnModuleInit {
 
     /** Atomic FSM state transition */
     private async transitionFsm(account: string, newState: ToggleState): Promise<void> {
-        const oldState = this.toggleFsm[account];
-        this.toggleFsm[account] = newState;
-        
+        const oldState = this.internalFsm.get(account);
+        this.internalFsm.transition(account, newState as any);
+
         console.log(`[FSM] 🔄 Account ${account}: ${oldState} → ${newState}`);
         this.gateway.sendUpdate('fsm:transition', {
             account,
@@ -280,7 +275,8 @@ export class WorkerService implements OnModuleInit {
         private providerManager: ProviderSessionManager,
         private chromeManager: ChromeConnectionManager,
         private commandRouter: CommandRouterService,
-        private internalBus: InternalEventBusService
+        private internalBus: InternalEventBusService,
+        private internalFsm: InternalFsmService
     ) {
         // 🛡️ Initialize Provider Session Manager
         // Already initialized in constructor
@@ -375,7 +371,7 @@ export class WorkerService implements OnModuleInit {
         registerHandler('LOG_OPPS', async (data) => { console.log('[WORKER] [LOG_OPPS] Received telemetry payload'); try{ this.gateway.sendUpdate('debug:opps', { payload: data.payload, ts: Date.now() }) }catch(e){} })
 
         // Misc / convenience commands still owned by WorkerService
-        registerHandler('toggle_on', async () => { if (this.toggleFsm.A !== ToggleState.IDLE && this.toggleFsm.B !== ToggleState.IDLE) return; await this.handleToggleFsm('A', true); await this.handleToggleFsm('B', true); this.config.accountA_active = true; this.config.accountB_active = true; this.broadcastStatus() })
+        registerHandler('toggle_on', async () => { if (this.internalFsm.get('A') !== ToggleState.IDLE && this.internalFsm.get('B') !== ToggleState.IDLE) return; await this.handleToggleFsm('A', true); await this.handleToggleFsm('B', true); this.config.accountA_active = true; this.config.accountB_active = true; this.broadcastStatus() })
         registerHandler('toggle_off', async () => { await this.handleToggleFsm('A', false); await this.handleToggleFsm('B', false); this.config.accountA_active = false; this.config.accountB_active = false; this.broadcastStatus() })
 
         registerHandler('FORCE_RESET', async () => { this.discoveryService.clearAllMemory(); this.gateway.sendUpdate('system_log', { level: 'warn', message: '[SYSTEM] Discovery registry wiped. Awaiting fresh data pulses.' }) })
@@ -1604,7 +1600,7 @@ export class WorkerService implements OnModuleInit {
                     injectedReady: this.injectedReady,
                     cdpReady: this.cdpReady,
                 },
-                fsm: { state: (this.toggleFsm.A === ToggleState.RUNNING || this.toggleFsm.B === ToggleState.RUNNING) ? 'RUNNING' : 'IDLE' },
+                fsm: { state: (this.internalFsm.get('A') === ToggleState.RUNNING || this.internalFsm.get('B') === ToggleState.RUNNING) ? 'RUNNING' : 'IDLE' },
                 gravity: { mode: 'STANDBY', activeOpportunities: discoveryStats.confirmedPairs || 0 },
                 sensors: Object.keys(this.providerStatus).map(k => ({ id: k, provider: (providerNames[k] || 'GENERIC'), lastPacket: String(Date.now()) })),
                 opportunities: [],
