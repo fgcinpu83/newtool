@@ -31,7 +31,33 @@ async function connectWithRetry({ maxAttempts = 8, initialDelay = 200, maxDelay 
   throw new Error('socket.io connection failed after retries');
 }
 
+async function waitForBackendHealth(timeoutMs = 10000, interval = 250) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const code = await new Promise((resolve, reject) => {
+        const req = http.request({ hostname: '127.0.0.1', port: 3001, path: '/health', method: 'GET', timeout: 2000 }, res => { resolve(res.statusCode); res.on('data', () => {}); });
+        req.on('error', () => reject(new Error('no-http')));
+        req.end();
+      });
+      if (code === 200) {
+        console.log('BACKEND: /health => 200');
+        return true;
+      }
+    } catch (e) {
+      // ignore — will retry
+    }
+    await sleep(interval);
+  }
+  console.warn('BACKEND: /health did not respond within timeout');
+  return false;
+}
+
 (async function mainConnect() {
+  // wait for HTTP health before attempting socket.io (helps CI race conditions)
+  const healthy = await waitForBackendHealth(10000, 250);
+  if (!healthy) console.warn('Proceeding to socket connect even though /health failed (will rely on connect retries)');
+
   try {
     socket = await connectWithRetry();
     // register handlers after socket is available (registerSocketHandlers is declared below)
