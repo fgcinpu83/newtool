@@ -309,8 +309,9 @@ window.lastGravityTraffic = Date.now();
             if (!isPassiveMode) {
                 const idleTime = Date.now() - (window.lastGravityTraffic || 0);
                 if (idleTime > 60000) {
-                    console.log('[GRAVITY-CHAMP] 🔄 Session IDLE > 60s. Forcing UI refresh.');
-                    document.body.click();
+                    console.log('[GRAVITY-CHAMP] 🔄 Session IDLE > 60s. Sending DASHBOARD_PING (no DOM click).');
+                    // Avoid modifying DOM during React hydration — send a benign ping instead
+                    window.postMessage({ type: 'DASHBOARD_PING', ts: Date.now() }, '*');
                     window.lastGravityTraffic = Date.now();
                 }
             } else {

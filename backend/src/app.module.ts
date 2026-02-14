@@ -10,6 +10,7 @@ import { NormalizationModule } from './normalization/normalization.module';
 import { PairingModule } from './pairing/pairing.module';
 import { HealthMonitorService } from './health/health.monitor';
 import { DevParseController } from './dev/dev.controller';
+import { TestController } from './debug/test.controller';
 import { GuardianModule } from './guardian/guardian.module';
 import { StressTestModule } from './stress-test/stress-test.module';
 import { FinancialModule } from './financial/financial.module';
@@ -35,7 +36,7 @@ import { ProviderModule } from './managers/provider.module';
         ChromeModule,
         GuardsModule
     ],
-    controllers: [DevParseController],
+    controllers: [DevParseController, TestController],
     providers: [HealthMonitorService],
 })
 export class AppModule { }

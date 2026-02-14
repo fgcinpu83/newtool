@@ -1,0 +1,57 @@
+name: Node.js CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch: {}
+
+jobs:
+  test-backend:
+    name: Backend CI (build + tests)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Print environment
+        run: |
+          echo "OS=${{ runner.os }}"
+          node -v
+          npm -v
+
+      - name: Install backend dependencies (try `npm ci`, fallback to `npm install`)
+        working-directory: ./backend
+        run: |
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Build backend
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Run backend tests
+        working-directory: ./backend
+        env:
+          CI: true
+        run: npm test -- -i --runInBand
+
+      - name: List better-sqlite3 installation (diagnostic)
+        working-directory: ./backend
+        if: always()
+        run: |
+          echo "--- node_modules/better-sqlite3 (if present) ---"
+          node -e "const fs=require('fs'); const d='node_modules'; try{ if(fs.existsSync(d)){ const names=fs.readdirSync(d).filter(n=>n.startsWith('better-sqlite3')); if(names.length) console.log(names.join('\\n')); else console.log('(none)'); } }catch(e){}"
+          echo "--- end diagnostic ---"

@@ -183,6 +183,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                         });
 
                         console.log('[AG-DESKTOP] ✅ Injection complete, injected into', injectedCount, 'tabs');
+                        // Notify backend of canonical toggle for accounts A/B when applicable
+                        try {
+                            if (acc && (acc.id === 'A' || acc.id === 'B')) {
+                                chrome.runtime.sendMessage({ type: 'SEND_COMMAND', command: { type: 'TOGGLE_ACCOUNT', payload: { account: acc.id, active: true } } });
+                            }
+                        } catch (e) { console.error('[AG-DESKTOP] ❌ Failed to notify backend of toggle:', e); }
+
                         sendResponse({ success: true, injected: injectedCount });
                     } catch (error) {
                         console.error('[AG-DESKTOP] ❌ Tab query error:', error);
@@ -210,6 +217,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 }
 
                 console.log('[AG-DESKTOP] ✅ Teardown complete for', teardownCount, 'tabs');
+                // Notify backend of canonical toggle for accounts A/B when applicable
+                try {
+                    if (acc && (acc.id === 'A' || acc.id === 'B')) {
+                        chrome.runtime.sendMessage({ type: 'SEND_COMMAND', command: { type: 'TOGGLE_ACCOUNT', payload: { account: acc.id, active: false } } });
+                    }
+                } catch (e) { console.error('[AG-DESKTOP] ❌ Failed to notify backend of toggle:', e); }
+
                 sendResponse({ success: true, teardown: teardownCount });
             }
         } catch (error) {

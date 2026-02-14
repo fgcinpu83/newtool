@@ -28,7 +28,8 @@ async function runTest() {
     console.log("🚀 STARTING PAIRING ENGINE AUDIT...");
 
     // 1. Setup Service
-    const service = new PairingService(mockGateway as any, mockNormalization as any, mockRedisService as any);
+    const mockCommandRouter = { register: (cmd: string, handler: any) => {} } as any;
+    const service = new PairingService(mockGateway as any, mockNormalization as any, mockRedisService as any, mockCommandRouter);
     service.onModuleInit();
 
     // 2. Define Test Cases

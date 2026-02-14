@@ -16,7 +16,7 @@
 │  1️⃣  Start Redis: "C:\Program Files\Redis\redis-server.exe"│
 │      (Biarkan terminal ini tetap terbuka)                   │
 │                                                             │
-│  2️⃣  Klik dua kali: START_SYSTEM.bat                       │
+│  2️⃣  Klik dua kali: ORCHESTRATOR_MASTER.bat               │
 │      → Tunggu sampai muncul "SYSTEM READY!"                 │
 │                                                             │
 │  3️⃣  Buka Chrome → http://localhost:3000                   │
@@ -111,7 +111,7 @@
 
 ```
 e:\newtool\
-├── START_SYSTEM.bat          # Startup harian
+├── ORCHESTRATOR_MASTER.bat   # Startup harian (master orchestrator)
 ├── extension_desktop\        # Chrome extension
 │   ├── manifest.json
 │   ├── background.js

@@ -2,11 +2,9 @@
 const nextConfig = {
     reactStrictMode: true,
     typescript: {
-        // !! WARN !!
-        // Dangerously allow production builds to successfully complete even if
-        // your project has type errors.
-        // !! WARN !!
-        ignoreBuildErrors: true,
+        // For safety: ensure production builds fail when TypeScript errors exist.
+        // This enforces the "STRICT TYPE SAFETY" rule from the constitution.
+        ignoreBuildErrors: false,
     },
 };
 

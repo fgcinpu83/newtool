@@ -1,57 +1,48 @@
-'use client';
+'use client'
 
-import React from 'react';
-import { useSystemStatus } from './lib/SystemStatusProvider';
+import { useBackendState } from '../state/useBackendState'
+import SystemStatus from '../components/SystemStatus'
+import ControlPanel from '../components/ControlPanel'
+import GravityBar from '../components/GravityBar'
+import ArbitrageTable from '../components/ArbitrageTable'
+import ExecutionHistory from '../components/ExecutionHistory'
+import SensorPanel from '../components/SensorPanel'
+import ErrorStream from '../components/ErrorStream'
+import AccountPanel from '../components/AccountPanel'
+import LiveScanner from '../components/LiveScanner'
+import AdminPanel from '../components/AdminPanel'
 
 export default function Page() {
-    const { connected, ready, emit } = useSystemStatus();
+  const state = useBackendState()
 
-    const handleToggleOn = () => {
-        emit('toggle_on', {});
-    };
+  if (!state) return <div>Connecting...</div>
+  return (
+    <main className="flex-1 flex flex-col min-w-0 bg-background-dark/50 p-4 gap-4 overflow-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 shrink-0 h-auto">
+        <AccountPanel account={'A'} state={state} />
+        <AccountPanel account={'B'} state={state} />
+      </div>
 
-    const handleToggleOff = () => {
-        emit('toggle_off', {});
-    };
+      <div className="flex flex-col gap-4 flex-1 min-h-0">
+        <ExecutionHistory state={state} />
 
-    return (
-        <div className="bg-[#0f172a] text-slate-200 min-h-screen font-sans flex items-center justify-center">
-            <div className="bg-[#1a2332] border border-[#2a374f] rounded-lg p-8 max-w-md w-full">
-                <h1 className="text-2xl font-bold text-white mb-6 text-center">Antigravity System</h1>
+        <AdminPanel />
 
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <span className="text-slate-300">Backend Connected:</span>
-                        <span className={`font-bold ${connected ? 'text-green-400' : 'text-red-400'}`}>
-                            {connected ? '✅' : '❌'}
-                        </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                        <span className="text-slate-300">System Ready:</span>
-                        <span className={`font-bold ${ready ? 'text-green-400' : 'text-red-400'}`}>
-                            {ready ? '✅' : '❌'}
-                        </span>
-                    </div>
-
-                    <div className="pt-4 border-t border-[#2a374f]">
-                        <div className="flex gap-4">
-                            <button
-                                onClick={handleToggleOn}
-                                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-                            >
-                                Toggle ON
-                            </button>
-                            <button
-                                onClick={handleToggleOff}
-                                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-                            >
-                                Toggle OFF
-                            </button>
-                        </div>
-                    </div>
-                </div>
+        <div className="flex-1 bg-surface-dark border border-border-dark rounded-lg flex flex-col min-h-0 shadow-sm">
+          <div className="px-4 py-3 border-b border-border-dark flex justify-between items-center bg-background-dark/20">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-sm">radar</span>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wide">Live Scanner</h3>
             </div>
+            <span className="bg-primary/20 text-primary text-[10px] font-bold px-2 py-0.5 rounded border border-primary/30">Running</span>
+          </div>
+          <div className="flex-1 overflow-auto custom-scroll relative">
+            <LiveScanner state={state} />
+          </div>
         </div>
-    );
+
+        <ErrorStream state={state} />
+      </div>
+    </main>
+  )
 }

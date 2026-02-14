@@ -110,6 +110,8 @@ Frontend hanya:
 - render status
 - kirim command eksplisit (toggle)
 
+> User Workflow (operator) is canonical in `e:\newtool\_MASTER_CONTEXT.md` — see the **User Workflow** section in that file for the authoritative procedure.
+
 ## V. EVENT CONTRACT (WAJIB)
 
 Event hanya bentuk ini:

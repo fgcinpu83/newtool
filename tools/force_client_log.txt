@@ -1,0 +1,2 @@
+Force client started at 2026-02-13T12:57:56.010Z
+[2026-02-13T12:57:56.015Z] connect_error websocket error

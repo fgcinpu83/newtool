@@ -50,7 +50,7 @@ export interface SystemConfig {
 /**
  * Default config - user HARUS set provider sebelum mulai
  */
-export const DEFAULT_CONFIG: SystemConfig = {
+export const DEFAULT_CONFIG: SystemConfig = Object.freeze({
     accountA: {
         account: 'A',
         provider: 'UNASSIGNED',
@@ -67,7 +67,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
     },
     minProfit: 1.5,
     maxProfit: 15.0,
-};
+}) as SystemConfig;
 
 /**
  * Validate config sebelum system start

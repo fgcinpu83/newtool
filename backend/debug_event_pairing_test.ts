@@ -20,7 +20,8 @@ const mockMarket = {} as any;
 // SETUP
 const normalization = new NormalizationService();
 const discovery = new DiscoveryService(mockGateway, normalization, mockRedis);
-const pairing = new PairingService(mockGateway, normalization, mockRedis);
+const mockCommandRouter = { register: (cmd, h) => { /* noop */ } } as any;
+const pairing = new PairingService(mockGateway, normalization, mockRedis, mockCommandRouter);
 
 async function runTest() {
     console.log("🧪 STARTING EVENT-LOCK PAIRING TEST");

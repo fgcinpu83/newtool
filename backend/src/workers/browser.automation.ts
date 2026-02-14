@@ -11,9 +11,13 @@
  */
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AppGateway } from '../gateway.module';
 import { RedisService } from '../shared/redis.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
+import { CommandRouterService } from '../command/command-router.service';
+import { InternalEventBusService } from '../events/internal-event-bus.service';
 
 @Injectable()
 export class BrowserAutomationService implements OnModuleInit {
@@ -23,6 +27,9 @@ export class BrowserAutomationService implements OnModuleInit {
     // account → URL mappings
     private accountUrls = new Map<string, string>();
 
+    // Per-account browser session isolation
+    private sessions = new Map<string, { port: number; tabTitle?: string; url?: string }>();
+
     // Debounce
     private lastLaunchTime = new Map<string, number>();
     private processedRequests = new Set<string>();
@@ -31,6 +38,8 @@ export class BrowserAutomationService implements OnModuleInit {
         private gateway: AppGateway,
         private redis: RedisService,
         private chromeManager: ChromeConnectionManager,
+        private commandRouter: CommandRouterService,
+        private internalBus: InternalEventBusService,
     ) {}
 
     async onModuleInit() {
@@ -48,7 +57,83 @@ export class BrowserAutomationService implements OnModuleInit {
             this.logger.log(`[OBSERVE] Chrome connection unavailable on port 9222 - state: ${infoA.state}`);
         }
 
-        this.gateway.commandEvents.on('command', (data) => this.handleCommand(data));
+        // Register as owner for browser-level commands (external only)
+        this.commandRouter.register('BROWSER_CMD', async (c) => {
+            try {
+                // Pass-through to extension via gateway
+                this.gateway.sendUpdate('browser:command', c.payload);
+            } catch (e) { this.logger.error('BROWSER_CMD failed', e) }
+        });
+
+        this.commandRouter.register('OPEN_BROWSER', async (c) => {
+            await this.handleBrowserStart(c.payload || {});
+        });
+
+        this.commandRouter.register('FOCUS_TAB', async (c) => { await this.focusTab(c.payload || {}); });
+        this.commandRouter.register('CLOSE_BROWSER', async (c) => { await this.handleBrowserStop(c.payload?.account); });
+        this.commandRouter.register('CHECK_CHROME', async (c) => { await this.reportChromeStatus(); });
+
+        // Internal event subscriptions (WorkerService -> BrowserAutomationService)
+        this.internalBus.on('REQUEST_BROWSER_CMD', (payload: any) => {
+            try {
+                this.logger.log(`Handling internal REQUEST_BROWSER_CMD: ${JSON.stringify(payload)}`);
+                this.gateway.sendUpdate('browser:command', payload);
+            } catch (e) { this.logger.error('Internal REQUEST_BROWSER_CMD failed', e as any) }
+        });
+
+        this.internalBus.on('REQUEST_OPEN_BROWSER', (payload: any) => {
+            try {
+                this.handleBrowserStart(payload || {});
+            } catch (e) { this.logger.error('Internal REQUEST_OPEN_BROWSER failed', e as any) }
+        });
+
+        this.internalBus.on('REQUEST_CLOSE_BROWSER', (payload: any) => {
+            try { this.handleBrowserStop(payload?.account); } catch (e) { this.logger.error('Internal REQUEST_CLOSE_BROWSER failed', e as any) }
+        });
+    }
+
+    // ─── SESSION ISOLATION HELPERS ─────────────────
+
+    /** Ensure one session per account; creates session if missing */
+    private async handleBrowserStart(payload: { account: string; url?: string; requestId?: string }) {
+        const { account, url, requestId } = payload as any;
+        try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'HANDLE_BROWSER_START_CALLED', account, url: url || null, requestId: requestId || null, sessionExists: this.sessions.has(account) }) + '\n'); } catch (e) {}
+        if (!account) return;
+
+        // If a session already exists for this account, attempt to navigate/focus instead of skipping
+        if (this.sessions.has(account)) {
+            this.logger.log(`[BROWSER] Session already active for ${account} - attempting navigation to ${url || this.accountUrls.get(account) || '(none)'}`);
+            try {
+                await this.openBrowserTab({ account, url: url || this.accountUrls.get(account) || '', requestId });
+            } catch (e) {
+                this.logger.error(`[BROWSER] Navigation attempt for existing session ${account} failed`, e as any);
+            }
+            return;
+        }
+
+        // Use existing openBrowserTab logic for opening/focusing
+        try {
+            await this.openBrowserTab({ account, url: url || this.accountUrls.get(account) || '', requestId });
+            // openBrowserTab will emit browser:opened on success; capture url and mark session
+            const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
+            this.sessions.set(account, { port, url: url || this.accountUrls.get(account) });
+            this.logger.log(`[BROWSER] Session created for ${account} on port ${port}`);
+        } catch (e) {
+            this.logger.error(`[BROWSER] Failed to start session for ${account}`, e as any);
+        }
+    }
+
+    /** Stop and dispose session for account */
+    private async handleBrowserStop(account?: string) {
+        if (!account) return;
+        const session = this.sessions.get(account);
+        if (!session) return;
+
+        this.logger.log(`[BROWSER] Stopping session for ${account}`);
+        // delegate actual tab close to extension/manager via gateway
+        this.gateway.sendUpdate('browser:close', { account });
+        this.gateway.sendUpdate('browser:closed', { account, timestamp: Date.now() });
+        this.sessions.delete(account);
     }
 
     // ─── COMMAND ROUTER ─────────────────────────────
@@ -78,6 +163,8 @@ export class BrowserAutomationService implements OnModuleInit {
     async openBrowserTab(payload: { account: string; url: string; requestId?: string }) {
         const { account, url, requestId } = payload;
 
+        try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'OPENBROWSER_ATTEMPT', account, url, requestId: requestId || null }) + '\n'); } catch (e) {}
+
         // Request ID dedup
         if (requestId) {
             if (this.processedRequests.has(requestId)) return;
@@ -100,6 +187,7 @@ export class BrowserAutomationService implements OnModuleInit {
 
         const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
         const result = await this.openUrlViaManager(port, url);
+        try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'OPENBROWSER_RESULT', account, url, result: { success: result.success, action: result.action || null, error: result.error || null } }) + '\n'); } catch (e) {}
 
         if (result.success) {
             this.logger.log(`${result.action === 'opened' ? 'Opened new tab' : 'Focused existing tab'}: ${result.tabTitle}`);
@@ -109,10 +197,18 @@ export class BrowserAutomationService implements OnModuleInit {
                 tabTitle: result.tabTitle,
                 timestamp: Date.now(),
             });
+            // persistent trace for open-publish
+            try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'BROWSER_OPENED_PUBLISH', account, url, action: result.action, tabTitle: result.tabTitle }) + '\n'); } catch (e) {}
+            // internal publish attempt trace
+            try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'BROWSER_INTERNAL_PUBLISH_ATTEMPT', account, url, action: result.action, tabTitle: result.tabTitle }) + '\n'); } catch (e) {}
+            // Internal notification for WorkerService / orchestration
+            try { this.internalBus.publish('BROWSER_OPENED', { account, url, action: result.action, tabTitle: result.tabTitle }); } catch (e) {}
             this.gateway.sendUpdate('EXECUTE_AUTOMATION', { account, url });
         } else {
             this.logger.error(`Failed: ${result.error}`);
             this.gateway.sendUpdate('browser:error', { account, error: result.error });
+            try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'BROWSER_OPEN_FAILED_PUBLISH', account, url, error: result.error }) + '\n'); } catch (e) {}
+            try { this.internalBus.publish('BROWSER_OPEN_FAILED', { account, error: result.error }); } catch (e) {}
             // ChromeLauncher.ensureRunning() is called inside attach() — no fallback needed
         }
     }

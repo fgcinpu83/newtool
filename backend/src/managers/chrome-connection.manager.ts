@@ -230,10 +230,12 @@ export class ChromeConnectionManager {
         }
     }
 
-    /** Open a new tab. Requires CONNECTED state. */
+    /** Open a new tab. Requires CONNECTED state. Implements HTTP + CDP fallback. */
     async openTab(port: number, url: string): Promise<any | null> {
         this.assertConnected(port);
         const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+
+        // Primary attempt: use /json/new (HTTP). Many environments support this.
         try {
             const endpoint = `http://localhost:${port}/json/new?${fullUrl}`;
             let res = await fetch(endpoint, { method: 'PUT', signal: AbortSignal.timeout(5000) });
@@ -241,10 +243,28 @@ export class ChromeConnectionManager {
                 res = await fetch(endpoint, { signal: AbortSignal.timeout(5000) });
             }
             if (res.ok) return await res.json();
-            return null;
-        } catch {
-            return null;
+        } catch (e) {
+            // fall through to CDP fallback
         }
+
+        // Fallback: use DevTools Protocol Target.createTarget via chrome-remote-interface
+        try {
+            this.logger.log(`[CDP-FALLBACK] attempting Target.createTarget on port ${port} -> ${fullUrl}`);
+            const CDP = require('chrome-remote-interface');
+            if (typeof CDP !== 'function') throw new Error('chrome-remote-interface missing');
+            const client = await CDP({ port });
+            if (client && client.Target && typeof client.Target.createTarget === 'function') {
+                const resp = await client.Target.createTarget({ url: fullUrl });
+                this.logger.log(`[CDP-FALLBACK] Target.createTarget result: ${JSON.stringify(resp).substring(0,200)}`);
+                try { if (typeof client.close === 'function') await client.close(); } catch (err) {}
+                if (resp && resp.targetId) return resp;
+            }
+            try { if (typeof client.close === 'function') await client.close(); } catch (err) {}
+        } catch (e) {
+            this.logger.error(`[CDP-FALLBACK] failed: ${(e && (e as Error).message) || String(e)}`);
+        }
+
+        return null;
     }
 
     /** Focus (activate) a tab by id. Requires CONNECTED state. */

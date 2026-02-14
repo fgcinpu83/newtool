@@ -1,7 +1,7 @@
 // AFB88 contract scaffold
 import type { ProviderConfig, ProviderProfile } from '../providers/base.provider';
 
-export const AFB88_CONTRACT: Partial<ProviderConfig> = {
+export const AFB88_CONTRACT: Partial<ProviderConfig> = Object.freeze({
     name: 'AFB88',
     profile: 'PATH_SESSION' as ProviderProfile,
     whitelabels: ['AFBGaming', 'AFB88'],
@@ -13,6 +13,6 @@ export const AFB88_CONTRACT: Partial<ProviderConfig> = {
     requiresActivator: false,
     keepalive: { intervalMs: 10000, timeoutMs: 45000 },
     balanceKeys: ['balance', 'userBalance'],
-};
+});
 
 export default AFB88_CONTRACT;

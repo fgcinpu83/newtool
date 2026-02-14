@@ -14,7 +14,7 @@
 
 import { ProviderConfig } from '../base.provider';
 
-export const AFB88_CONFIG: ProviderConfig = {
+export const AFB88_CONFIG: ProviderConfig = Object.freeze({
     name: 'AFB88',
     
     profile: 'EVENT_DRIVEN',
@@ -85,7 +85,7 @@ export const AFB88_CONFIG: ProviderConfig = {
         'Balance2D', 'Balance2',
         'uBal', 'ubal',
     ],
-};
+});
 
 /**
  * Check if payload is GZIP compressed (Base64 encoded)

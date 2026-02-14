@@ -8,6 +8,8 @@ import { DiscoveryModule } from '../discovery/discovery.module';
 import { PairingModule } from '../pairing/pairing.module';
 import { GuardianModule } from '../guardian/guardian.module';
 import { BrowserAutomationService } from './browser.automation';
+import { InternalEventBusService } from '../events/internal-event-bus.service';
+import { InternalFsmService } from '../events/internal-fsm.service';
 import { SharedModule } from '../shared/shared.module';
 import { ChromeModule } from '../chrome/chrome.module';
 
@@ -19,7 +21,7 @@ import { CmdWorker } from './cmd.worker';
 @Module({
     imports: [forwardRef(() => MarketModule), GatewayModule, DiscoveryModule, PairingModule, GuardianModule, SharedModule, ChromeModule],
     controllers: [WorkerController, BridgeController],
-    providers: [WorkerService, BrowserAutomationService, WorkerManager, AfbWorker, CmdWorker],
-    exports: [WorkerService, WorkerManager, AfbWorker, CmdWorker],
+    providers: [WorkerService, BrowserAutomationService, WorkerManager, AfbWorker, CmdWorker, InternalEventBusService, InternalFsmService],
+    exports: [WorkerService, WorkerManager, AfbWorker, CmdWorker, InternalEventBusService, InternalFsmService],
 })
 export class WorkerModule { }

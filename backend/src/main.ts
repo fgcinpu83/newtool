@@ -9,6 +9,22 @@ async function bootstrap() {
         console.log("Starting application bootstrap...");
         const app = await NestFactory.create(AppModule);
 
+        // Register global error handlers so crashes are logged to wire_debug.log
+        try {
+            const fs = require('fs');
+            const wireLog = require('path').join(process.cwd(), 'logs', 'wire_debug.log');
+            process.on('uncaughtException', (err: any) => {
+                const entry = { ts: Date.now(), event: 'UNCATCHED_EXCEPTION', message: err?.message || String(err), stack: err?.stack };
+                try { fs.appendFileSync(wireLog, JSON.stringify(entry) + '\n'); } catch (e) {}
+                console.error('[FATAL] Uncaught Exception:', err);
+            });
+            process.on('unhandledRejection', (reason: any) => {
+                const entry = { ts: Date.now(), event: 'UNHANDLED_REJECTION', reason: String(reason) };
+                try { fs.appendFileSync(wireLog, JSON.stringify(entry) + '\n'); } catch (e) {}
+                console.error('[FATAL] Unhandled Rejection:', reason);
+            });
+        } catch (e) { console.warn('[MAIN] Failed to install global error handlers', e); }
+
         // 🚀 Setup Socket.IO adapter for extension compatibility
         app.useWebSocketAdapter(new IoAdapter(app));
 

@@ -275,6 +275,15 @@ export default function Page() {
         on('browser:opened', (data) => addLog(`✅ Browser ${data.action}: ${data.url} (Account ${data.account})`));
         on('browser:focused', (data) => addLog(`🎯 Focused tab: ${data.tabTitle} (Account ${data.account})`));
         on('browser:error', (data) => addLog(`❌ Browser error (Account ${data.account}): ${data.error}`));
+
+        // Toggle failure telemetry (display to operator + record scanner error)
+        on('toggle:failed', (data) => {
+            try {
+                const msg = `[TOGGLE FAILED] Account=${data.account} Reason=${data.reason} ${data.missing ? 'Missing='+data.missing.join(',') : ''}`;
+                addLog(`⚠️ ${msg}`);
+                setScannerError({ type: 'CONNECTION_LOST', message: msg, timestamp: Date.now() });
+            } catch (e) { console.warn('toggle:failed handler error', e); }
+        });
         on('scanner:update_batch', (data) => {
             setScannerError(null);
             if (data && data.length > 0) {
@@ -553,7 +562,7 @@ export default function Page() {
                             <label className="text-xs font-semibold text-slate-400 uppercase">Round Off Amount</label>
                             <div className="relative">
                                 <span className="absolute left-3 top-2.5 text-slate-500 material-symbols-outlined text-sm">money</span>
-                                <input type="number" step="0.1" value={config.roundOff} onChange={e => setConfig({ ...config, roundOff: parseFloat(e.target.value) })} className="w-full bg-[#101622] border border-[#2a374f] rounded-lg text-sm text-white py-2 pl-9 pr-3 focus:outline-none focus:border-[#2b6cee]" />
+                                <input aria-label="Round off amount" title="Round off amount" placeholder="Round off" type="number" step="0.1" value={config.roundOff} onChange={e => setConfig({ ...config, roundOff: parseFloat(e.target.value) })} className="w-full bg-[#101622] border border-[#2a374f] rounded-lg text-sm text-white py-2 pl-9 pr-3 focus:outline-none focus:border-[#2b6cee]" />
                             </div>
                         </div>
 
@@ -596,6 +605,8 @@ export default function Page() {
                                     <div className="relative">
                                         <span className="absolute left-3 top-2 text-slate-500 text-[10px]">$</span>
                                         <input
+                                            aria-label={`Stake level ${i + 1} amount`}
+                                            title={`Stake level ${i + 1} amount`}
                                             type="number"
                                             value={tier.amount}
                                             onChange={e => setConfig({
@@ -723,13 +734,14 @@ export default function Page() {
                                             </div>
                                         </div>
                                         <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" checked={active} onChange={() => toggleAccount(acc as 'A' | 'B')} className="sr-only peer" />
+                                            <input aria-label={`Toggle account ${acc}`} title={`Toggle account ${acc}`} type="checkbox" checked={active} onChange={() => toggleAccount(acc as 'A' | 'B')} className="sr-only peer" />
                                             <div className="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:bg-[#22c55e] peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
                                         </label>
                                     </div>
                                     {/* Provider Dropdown */}
                                     <div className="flex items-center gap-2">
                                         <select 
+                                            aria-label={`Provider selection for account ${acc}`} title={`Provider selection for account ${acc}`}
                                             value={isA ? config.providerA : config.providerB}
                                             onChange={e => setConfig({ ...config, [isA ? 'providerA' : 'providerB']: e.target.value })}
                                             className="bg-[#101622] border border-[#2a374f] rounded px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:border-[#2b6cee] cursor-pointer"

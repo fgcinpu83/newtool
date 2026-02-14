@@ -247,7 +247,7 @@
             <div class="account-item" id="fixed-panel-B">
                 <div>
                     <strong>Account B</strong><br>
-                    <small style="color:#a0a0a0">Primary</small>
+                    <small style="color:#a0a0a0">Secondary</small>
                     <div class="provider-lights" data-id="lights-B"></div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
@@ -260,6 +260,21 @@
                 </div>
             </div>
         </div>
+
+        <div style="margin-bottom:12px;">
+            <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--text-dim)">Account Controls</h4>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:6px">
+                    <input type="checkbox" id="primary-toggle"> Enable Primary Account
+                </label>
+            </div>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:6px">
+                    <input type="checkbox" id="secondary-toggle"> Enable Secondary Account
+                </label>
+            </div>
+        </div>
+
         <div class="form-group">
             <label>Active Provider</label>
             <select id="acc-provider-type">
