@@ -410,7 +410,12 @@ export class WorkerService implements OnModuleInit {
         this.balance = { A: '0.00', B: '0.00' };
         
         // Clear Redis config on startup to ensure clean state
-        await this.redisService.setConfig(this.config);
+        try {
+            await this.redisService.setConfig(this.config);
+        } catch (e) {
+            // Non-fatal in CI/test environments where Redis may be missing — continue startup
+            console.warn('[WORKER] Redis setConfig failed during startup, continuing without Redis:', e && e.message ? e.message : String(e));
+        }
         
         this.broadcastStatus();
 

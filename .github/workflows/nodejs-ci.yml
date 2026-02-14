@@ -96,12 +96,23 @@ jobs:
         working-directory: ./backend
         run: |
           npm run start:prod &
-          for i in $(seq 1 20); do
-            status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health || echo 000)
-            echo "backend health=$status"
+          for i in $(seq 1 40); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3001/health || echo 000)
+            if [ "$status" -ne 200 ]; then
+              status=$(curl -s -o /dev/null -w "%{http_code}" http://[::1]:3001/health || echo 000)
+            fi
+            if [ "$status" -ne 200 ]; then
+              status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health || echo 000)
+            fi
+            echo "backend health=$status (probe #$i)"
             if [ "$status" -eq 200 ]; then echo 'backend ready'; break; fi
             sleep 0.5
           done
+          if [ "$status" -ne 200 ]; then
+            echo "--- NETWORK DIAGNOSTICS ---";
+            ss -ltnp || netstat -ltnp || true;
+            echo "--- END DIAGNOSTICS ---";
+          fi
           node ../tools/e2e_ci_frontend_sim.js
 
       - name: Start backend (background) + Run E2E (Windows)

@@ -337,4 +337,35 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
     expect(mocks.gateway.sendUpdate).toHaveBeenCalledWith('execution_history_db', rows);
     expect(resp && resp.success).toBe(true);
   });
+
+  test('onModuleInit continues when Redis.setConfig throws (startup resiliency)', async () => {
+    // Create a worker where redisService.setConfig will reject to simulate missing Redis in CI
+    const failingRedis: any = { setConfig: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')), set: jest.fn().mockResolvedValue(true) };
+    const localMocks = makeMocks();
+    localMocks.redisService = failingRedis;
+
+    const localSvc = new WorkerService(
+      ({} as any),
+      localMocks.gateway,
+      localMocks.redisService,
+      localMocks.sqliteMock,
+      localMocks.discoveryService,
+      localMocks.pairingService,
+      localMocks.guardianService,
+      localMocks.registry,
+      localMocks.decoder,
+      localMocks.providerManager,
+      localMocks.chromeManager,
+      localMocks.commandRouter,
+      localMocks.internalBus,
+      (localMocks.internalFsm as unknown) as InternalFsmService
+    );
+
+    // Should not throw even if Redis.setConfig fails during onModuleInit
+    await expect(localSvc.onModuleInit()).resolves.not.toThrow();
+
+    // Ensure broadcastStatus still called by virtue of no exception
+    // (we can check runtimeManager was created)
+    expect((localSvc as any).runtimeManager).toBeDefined();
+  });
 });
