@@ -99,6 +99,11 @@ jobs:
         run: |
           npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
+      - name: Verify tools dependencies (`socket.io-client`)
+        working-directory: .
+        run: |
+          node -e "try { require('socket.io-client'); console.log('socket.io-client OK'); } catch (e) { console.error('socket.io-client load failed', e && e.message); process.exit(1); }"
+
       - name: Run E2E simulation (simulate CI frontend)
         working-directory: ./backend
         run: |
