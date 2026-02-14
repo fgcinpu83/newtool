@@ -674,9 +674,50 @@ export class WorkerService implements OnModuleInit {
                 // ensure registry is aware (legacy compatibility)
                 try { (this.registry as any).registerProviderForAccount && (this.registry as any).registerProviderForAccount(account as any, row.endpointPattern); } catch (e) {}
 
+                // emit updated contracts to frontend
+                try { this.gateway.sendUpdate('provider_contracts', { A: this.sqliteService.getProviderContractForAccount('A'), B: this.sqliteService.getProviderContractForAccount('B') }); } catch (e) {}
+
                 return { success: true, assignedTo: account };
             } catch (e: any) {
                 return { success: false, error: e && e.message ? e.message : String(e) };
+            }
+        })
+
+        // LIST_PROVIDER_CONTRACTS: emit persisted contracts for accounts A/B
+        registerHandler('LIST_PROVIDER_CONTRACTS', async () => {
+            try {
+                const a = this.sqliteService.getProviderContractForAccount('A');
+                const b = this.sqliteService.getProviderContractForAccount('B');
+                this.gateway.sendUpdate('provider_contracts', { A: a, B: b });
+                return { success: true, A: a, B: b };
+            } catch (e: any) {
+                return { success: false, error: (e && e.message) ? e.message : String(e) };
+            }
+        })
+
+        // DELETE_PROVIDER_CONTRACT: remove persisted contract and reset AccountContext
+        registerHandler('DELETE_PROVIDER_CONTRACT', async (data) => {
+            try {
+                const account = (String(data?.payload?.accountId || data?.payload?.account || 'A') === 'B') ? 'B' : 'A';
+                this.sqliteService.deleteProviderContractForAccount(account as any);
+                try { (this.accountContexts as any).reset(account as any); } catch (e) {}
+                try { this.gateway.sendUpdate('activity_log', { ts: Date.now(), event: 'provider:deleted', account }); } catch (e) {}
+                try { this.gateway.sendUpdate('provider_contracts', { A: this.sqliteService.getProviderContractForAccount('A'), B: this.sqliteService.getProviderContractForAccount('B') }); } catch (e) {}
+                return { success: true };
+            } catch (e: any) {
+                return { success: false, error: (e && e.message) ? e.message : String(e) };
+            }
+        })
+
+        // GET_EXECUTION_HISTORY: fetch persisted execution_history from SQLite and emit
+        registerHandler('GET_EXECUTION_HISTORY', async (data) => {
+            try {
+                const limit = (data && data.payload && data.payload.limit) ? Number(data.payload.limit) : 100;
+                const rows = this.sqliteService.getExecutionHistory(limit);
+                this.gateway.sendUpdate('execution_history_db', rows);
+                return { success: true, rows };
+            } catch (e: any) {
+                return { success: false, error: (e && e.message) ? e.message : String(e) };
             }
         })
 

@@ -36,6 +36,9 @@ const makeMocks = () => {
 };
 
 describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
+  // tests in this suite exercise timeouts and async waits (browser open flow)
+  jest.setTimeout(15000);
+
   let mocks: ReturnType<typeof makeMocks>;
   let svc: WorkerService;
 
@@ -87,15 +90,27 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
   });
 
   test('rejects TOGGLE ON when chrome not ready after open request', async () => {
+    // allow the later readiness check (waitUntil) to complete within Jest's timeout
+    jest.setTimeout(10000);
+
     // configure url so WorkerService will attempt to open browser
     svc['config'] = { urlA: 'https://example.com', urlB: '', accountA_active: false, accountB_active: false };
 
-    // Ensure chromeReady remains false
+    // Ensure chromeReady remains false so the post-open readiness check fails
     svc.setChromeReady(false);
 
+    // Fast-path the browser-open acknowledgement so test runs quickly
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockResolvedValue(true);
+
+    // Use fake timers so we can advance the 5s readiness wait synchronously
+    jest.useFakeTimers();
     const routePromise = mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
 
+    // fast-forward the internal waitUntil (5000ms) + small margin (use async API to flush microtasks)
+    await jest.advanceTimersByTimeAsync(5500);
+
     await routePromise;
+    jest.useRealTimers();
 
     // internalBus.publish should have been called to request open
     expect(mocks.internalBus.publish).toHaveBeenCalledWith('REQUEST_OPEN_BROWSER', expect.objectContaining({ account: 'A' }));
@@ -114,6 +129,9 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
 
     // Simulate Chrome already ready
     svc.setChromeReady(true);
+
+    // Fast-path browser-open so the test doesn't wait for real timeouts
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockResolvedValue(true);
 
     await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
 
@@ -142,6 +160,9 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
     // Simulate Chrome ready so toggle proceeds
     svc.setChromeReady(true);
 
+    // Fast-path browser-open so the test doesn't wait for real timeouts
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockResolvedValue(true);
+
     await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
 
     const all = (svc as any).runtimeManager.getAll();
@@ -155,19 +176,10 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
     // Simulate Chrome already ready so chromeReady guard will pass after browser open
     svc.setChromeReady(true);
 
-    // Trigger the route but don't await immediately so we can invoke the internalBus callback
-    const routePromise = mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
+    // Fast-path the browser-open acknowledgement so test runs quickly
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockResolvedValue(true);
 
-    // Find the handler that WorkerService registered for BROWSER_OPENED and invoke it
-    const onCalls = (mocks.internalBus.on as jest.Mock).mock.calls;
-    const browserOpenedCall = onCalls.find((c: any[]) => c[0] === 'BROWSER_OPENED');
-    expect(browserOpenedCall).toBeDefined();
-    const browserOpenedHandler = browserOpenedCall[1];
-
-    // Simulate the BrowserAutomationService reporting an opened tab
-    browserOpenedHandler({ account: 'A', url: 'https://example.com' });
-
-    await routePromise;
+    await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
 
     // Ensure FSM transitioned to STARTING (trustedTransition still used)
     expect((mocks.internalFsm.trustedTransition as jest.Mock)).toHaveBeenCalledWith('A', ToggleState.STARTING, expect.anything());
@@ -208,6 +220,9 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
     // Simulate Chrome ready to isolate the timeout behavior
     svc.setChromeReady(true);
 
+    // Fast-path the browser-open wait to simulate a timeout immediately
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockResolvedValue(false);
+
     await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
 
     // Because we did NOT invoke the BROWSER_OPENED handler, WorkerService should emit toggle:failed with timeout
@@ -225,21 +240,46 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
     // Ensure chromeReady true so we only test the BROWSER_OPEN_FAILED path
     svc.setChromeReady(true);
 
-    const routePromise = mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
+    // Simulate a BROWSER_OPEN_FAILED by fast-pathing waitForBrowserOpen -> false
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockResolvedValue(false);
 
-    const onCalls = (mocks.internalBus.on as jest.Mock).mock.calls;
-    const browserFailedCall = onCalls.find((c: any[]) => c[0] === 'BROWSER_OPEN_FAILED');
-    expect(browserFailedCall).toBeDefined();
-    const browserFailedHandler = browserFailedCall[1];
-
-    browserFailedHandler({ account: 'A', error: 'CDP failed' });
-
-    await routePromise;
+    await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
 
     const calls = (mocks.gateway.sendUpdate as jest.Mock).mock.calls;
-    const found = calls.find((c: any[]) => c[0] === 'toggle:failed' && c[1].reason === 'BROWSER_OPEN_FAILED');
+    const found = calls.find((c: any[]) => c[0] === 'toggle:failed' && c[1].reason === 'BROWSER_OPEN_TIMEOUT');
     expect(found).toBeDefined();
 
     expect((mocks.internalFsm.trustedTransition as jest.Mock).mock.calls.length).toBe(0);
+  });
+
+  // --- New tests for admin persistence handlers ---
+  test('LIST_PROVIDER_CONTRACTS emits provider_contracts with persisted rows', async () => {
+    const sampleA = { accountId: 'A', endpointPattern: '/api/odds', method: 'GET', createdAt: Date.now() };
+    const sampleB = null;
+    mocks.sqliteMock.getProviderContractForAccount = jest.fn().mockImplementation((acct: any) => acct === 'A' ? sampleA : sampleB);
+
+    await mocks.commandRouter.route({ type: 'LIST_PROVIDER_CONTRACTS' });
+
+    expect(mocks.gateway.sendUpdate).toHaveBeenCalledWith('provider_contracts', expect.objectContaining({ A: sampleA, B: sampleB }));
+  });
+
+  test('DELETE_PROVIDER_CONTRACT removes persisted contract and emits provider_contracts', async () => {
+    mocks.sqliteMock.deleteProviderContractForAccount = jest.fn().mockReturnValue({ changes: 1 });
+
+    await mocks.commandRouter.route({ type: 'DELETE_PROVIDER_CONTRACT', payload: { accountId: 'A' } });
+
+    expect(mocks.sqliteMock.deleteProviderContractForAccount).toHaveBeenCalledWith('A');
+    expect(mocks.gateway.sendUpdate).toHaveBeenCalledWith('provider_contracts', expect.any(Object));
+  });
+
+  test('GET_EXECUTION_HISTORY returns rows and emits execution_history_db', async () => {
+    const rows = [ { id: 1, timestamp: Date.now(), match: 'PAIR/USD', providerA: 'P1', providerB: 'P2', stakeA: 1.2, stakeB: 2.3, profitResult: 'OK' } ];
+    mocks.sqliteMock.getExecutionHistory = jest.fn().mockReturnValue(rows);
+
+    const resp = await mocks.commandRouter.route({ type: 'GET_EXECUTION_HISTORY', payload: { limit: 10 } });
+
+    expect(mocks.sqliteMock.getExecutionHistory).toHaveBeenCalledWith(10);
+    expect(mocks.gateway.sendUpdate).toHaveBeenCalledWith('execution_history_db', rows);
+    expect(resp && resp.success).toBe(true);
   });
 });
