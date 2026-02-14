@@ -31,6 +31,8 @@ import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 import { InternalEventBusService } from '../events/internal-event-bus.service';
 import { InternalFsmService, ToggleState } from '../events/internal-fsm.service';
 import { AccountRuntimeManager } from '../runtime/account-runtime.manager'
+import { AccountContextManager } from '../runtime/account-context.manager'
+import { SqliteService } from '../shared/sqlite.service'
 
 // ðŸ”¥ PROVIDER STATE MACHINE
 // Expanded to include Guardian states
@@ -78,6 +80,8 @@ export class WorkerService implements OnModuleInit {
 
     // Non-destructive runtime isolation manager (Phase 1)
     private runtimeManager: import('../runtime/account-runtime.manager').AccountRuntimeManager
+    // Per-account context manager (A/B isolation)
+    private accountContexts = new (require('../runtime/account-context.manager').AccountContextManager)()
 
     // 🛡️ v6.2 PIPELINE LIFECYCLE TRACKING
     private pipelineStage: Record<string, string> = {
@@ -366,6 +370,7 @@ export class WorkerService implements OnModuleInit {
         private marketService: MarketService,
         private gateway: AppGateway,
         private redisService: RedisService,
+        private sqliteService: SqliteService,
         private discoveryService: DiscoveryService,
         private pairingService: PairingService,
         private guardianService: ProviderGuardianService,
@@ -634,6 +639,47 @@ export class WorkerService implements OnModuleInit {
 
         registerHandler('UPDATE_CONFIG', async (data) => { this.config = { ...this.config, ...data.payload }; try { await this.redisService.setConfig(this.config) } catch (e){}; this.broadcastStatus(); })
 
+        // MARK_PROVIDER: persist provider contract (SQLite) and attach to AccountContext
+        registerHandler('MARK_PROVIDER', async (data) => {
+            try {
+                const payload = data && data.payload ? data.payload : {};
+                const account = (String(payload.accountId || payload.account || '').toUpperCase() === 'B') ? 'B' : 'A';
+                if (account !== 'A' && account !== 'B') return { success: false, error: 'invalid-account' };
+
+                const existing = this.sqliteService.getProviderContractForAccount(account as any);
+                if (existing) {
+                    return { success: false, error: 'contract-already-exists' };
+                }
+
+                const row = {
+                    accountId: account as any,
+                    endpointPattern: String(payload.endpointPattern || '').trim(),
+                    method: String(payload.method || 'GET').toUpperCase(),
+                    requestSchema: payload.requestSchema ? JSON.stringify(payload.requestSchema) : null,
+                    responseSchema: payload.responseSchema ? JSON.stringify(payload.responseSchema) : null,
+                } as any;
+
+                if (!row.endpointPattern) return { success: false, error: 'missing-endpointPattern' };
+
+                this.sqliteService.saveProviderContract(row);
+
+                // attach to account context (complete isolation per-account)
+                const ctx = this.accountContexts.get(account as any);
+                ctx.providerContract = { endpointPattern: row.endpointPattern, method: row.method, requestSchema: payload.requestSchema || null, responseSchema: payload.responseSchema || null, assignedAt: Date.now() };
+                ctx.providerStatus = 'GREEN';
+
+                // Activity log to UI (separate channel)
+                try { this.gateway.sendUpdate('activity_log', { ts: Date.now(), event: 'provider:marked', account, endpointPattern: row.endpointPattern }); } catch (e) {}
+
+                // ensure registry is aware (legacy compatibility)
+                try { (this.registry as any).registerProviderForAccount && (this.registry as any).registerProviderForAccount(account as any, row.endpointPattern); } catch (e) {}
+
+                return { success: true, assignedTo: account };
+            } catch (e: any) {
+                return { success: false, error: e && e.message ? e.message : String(e) };
+            }
+        })
+
         registerHandler('LOG_OPPS', async (data) => { console.log('[WORKER] [LOG_OPPS] Received telemetry payload'); try{ this.gateway.sendUpdate('debug:opps', { payload: data.payload, ts: Date.now() }) }catch(e){} })
 
         // Misc / convenience commands still owned by WorkerService
@@ -727,6 +773,33 @@ export class WorkerService implements OnModuleInit {
             try { fs.appendFileSync(this.wireLog, `[${new Date().toISOString()}] ${flowMsg}\n`); } catch (e) { }
         }
         // 🛡️ v5.2: Removed spammy "Balance A is 0.00" log - no longer needed every 5 seconds
+
+        // Update providerStatus per AccountContext (YELLOW if no traffic for 5s; RED if stale/none)
+        try {
+            const now = Date.now();
+            for (const ctx of (this.accountContexts as any).getAll()) {
+                if (!ctx.providerContract) {
+                    ctx.providerStatus = 'RED';
+                    ctx.oddsStreamActive = false;
+                    continue;
+                }
+                const last = ctx.lastTrafficAt || 0;
+                const age = now - last;
+                if (last === 0) {
+                    ctx.providerStatus = 'YELLOW';
+                    ctx.oddsStreamActive = false;
+                } else if (age <= 5000) {
+                    ctx.providerStatus = 'GREEN';
+                    ctx.oddsStreamActive = true;
+                } else if (age > 5000 && age <= 30000) {
+                    ctx.providerStatus = 'YELLOW';
+                    ctx.oddsStreamActive = false;
+                } else {
+                    ctx.providerStatus = 'RED';
+                    ctx.oddsStreamActive = false;
+                }
+            }
+        } catch (e) { /* swallow */ }
 
         this.broadcastStatus();
     }
@@ -834,6 +907,25 @@ export class WorkerService implements OnModuleInit {
             }
 
             let verifiedProvider = this.classifyContract(url, data.data || data, type);
+
+            // If a user-defined provider contract exists for this account, enforce it (strict filtering)
+            try {
+                const ctx = this.accountContexts.get(account as any);
+                if (ctx && ctx.providerContract) {
+                    const pattern = String(ctx.providerContract.endpointPattern || '').toLowerCase();
+                    if (pattern && url.indexOf(pattern) === -1) {
+                        // Not relevant to this account's contract — ignore
+                        return;
+                    }
+
+                    // matched contract — update last seen / stream active
+                    ctx.lastTrafficAt = Date.now();
+                    ctx.oddsStreamActive = true;
+                    ctx.providerStatus = 'GREEN';
+                    try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'CONTRACT_MATCH', account, url: url.substring(0,200) }) + '\n'); } catch (e) {}
+                    this.broadcastStatus();
+                }
+            } catch (e) { /* swallow */ }
 
             // 🎯 v10.0 CONFIG-DRIVEN ROUTING (TIDAK HARDCODE)
             // Route traffic ke account berdasarkan USER CONFIG, bukan hardcode
@@ -1852,7 +1944,20 @@ export class WorkerService implements OnModuleInit {
             pipelineB: this.pipelineStage.B,
             activeEventsA: effectiveEventsA,
             activeEventsB: effectiveEventsB,
-            activePairs: (this.config.accountA_active && this.config.accountB_active) ? discoveryStats.confirmedPairs : 0
+            activePairs: (this.config.accountA_active && this.config.accountB_active) ? discoveryStats.confirmedPairs : 0,
+            // Add AccountContext summary for UI (non-breaking additive field)
+            accountContexts: {
+                A: {
+                    url: (this.accountContexts as any).get('A').url || this.config.urlA || '',
+                    providerStatus: (this.accountContexts as any).get('A').providerStatus,
+                    oddsStreamActive: (this.accountContexts as any).get('A').oddsStreamActive
+                },
+                B: {
+                    url: (this.accountContexts as any).get('B').url || this.config.urlB || '',
+                    providerStatus: (this.accountContexts as any).get('B').providerStatus,
+                    oddsStreamActive: (this.accountContexts as any).get('B').oddsStreamActive
+                }
+            }
         });
 
         const statusMsg = `[STATUS-SYNC] ID=${this.instanceId} Broadcasting A_active=${this.config.accountA_active} B_active=${this.config.accountB_active}`;
@@ -1966,6 +2071,15 @@ export class WorkerService implements OnModuleInit {
 
         // 7. [v7.5] CLEAN PAIRING SERVICE
         this.pairingService.cleanAccount(account as 'A' | 'B');
+
+        // 8. Remove persisted provider contract (SQLite) and reset AccountContext
+        try { this.sqliteService && this.sqliteService.deleteProviderContractForAccount(account as any); } catch (e) {}
+        try { (this.accountContexts as any).reset(account as any); } catch (e) {}
+
+        // 9. Request browser teardown for account (single tab guarantee)
+        try { this.internalBus.publish('REQUEST_CLOSE_BROWSER', { account }); } catch (e) {}
+
+        this.broadcastStatus();
 
         // 8. PURGE TAB BINDINGS
         for (const [tabId, acc] of this.tabToAccountMap.entries()) {

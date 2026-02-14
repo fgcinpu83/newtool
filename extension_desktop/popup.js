@@ -35,6 +35,44 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Mark Provider: captures minimal contract info and sends to backend
+    const markBtn = document.getElementById('mark-provider');
+    markBtn.addEventListener('click', async () => {
+        try {
+            const defaultAccount = prompt('Assign to account (A or B)', 'A') || 'A';
+            const acc = (defaultAccount.toUpperCase() === 'B') ? 'B' : 'A';
+
+            // Try to use current active tab origin as default endpointPattern
+            let defaultPattern = '';
+            const tabs = await new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+            if (tabs && tabs[0] && tabs[0].url) {
+                try { const u = new URL(tabs[0].url); defaultPattern = u.origin; } catch (e) { defaultPattern = tabs[0].url.substring(0, 100); }
+            }
+
+            const endpointPattern = prompt('Endpoint pattern (substring or origin)', defaultPattern || '') || '';
+            if (!endpointPattern) return alert('Cancelled: endpointPattern required');
+            const method = prompt('HTTP method (GET/POST)', 'GET') || 'GET';
+            const reqSchema = prompt('Request schema (optional, JSON)', '') || '';
+            const resSchema = prompt('Response schema (optional, JSON)', '') || '';
+
+            const payload = {
+                accountId: acc,
+                endpointPattern,
+                method,
+                requestSchema: reqSchema ? JSON.parse(reqSchema) : undefined,
+                responseSchema: resSchema ? JSON.parse(resSchema) : undefined,
+                timestamp: Date.now()
+            };
+
+            // Send command to backend via runtime message (offscreen will forward over socket)
+            chrome.runtime.sendMessage({ type: 'SEND_COMMAND', command: { type: 'MARK_PROVIDER', payload } });
+            alert('Provider contract sent to backend for review');
+        } catch (err) {
+            console.error('Mark Provider failed', err);
+            alert('Failed to send provider contract — check console');
+        }
+    });
+
     // Listen for data from content script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.type === 'LIVE_DATA') {

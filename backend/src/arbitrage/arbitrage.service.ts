@@ -6,6 +6,7 @@ import { RedisService } from '../shared/redis.service';
 import { WorkerService, ProviderState } from '../workers/worker.service';
 import { ContractRegistry } from '../workers/contract-registry.service';
 import { GlobalExecutionGuard, ExecutionBlockedError } from '../guards/global-execution.guard';
+import { SqliteService } from '../shared/sqlite.service';
 
 @Injectable()
 export class ArbitrageService {
@@ -20,6 +21,7 @@ export class ArbitrageService {
         @Inject(forwardRef(() => ContractRegistry))
         private contractRegistry: ContractRegistry,
         private executionGuard: GlobalExecutionGuard,
+        private sqliteService: SqliteService,
     ) { }
 
     async evaluate(pricesSideA: any, pricesSideB: any) {
@@ -197,6 +199,19 @@ export class ArbitrageService {
 
         this.history.unshift(trade);
         if (this.history.length > 50) this.history.pop();
+
+        // Persist to SQLite execution_history (best-effort)
+        try {
+            this.sqliteService && this.sqliteService.saveExecutionHistory({
+                timestamp: Date.now(),
+                match: trade.match,
+                providerA: trade.provider1,
+                providerB: trade.provider2,
+                stakeA: roundedStake,
+                stakeB: 0,
+                profitResult: trade.profit
+            });
+        } catch (e) { /* non-fatal */ }
 
         // ⚡ SYNC UI: Standardized 'execution_history' event
         this.gateway.sendUpdate('execution_history', this.history);

@@ -23,6 +23,7 @@ const makeMocks = () => {
 
   const commandRouter = new CommandRouterService();
   const internalBus: any = { publish: jest.fn(), on: jest.fn() };
+  const sqliteMock: any = { getProviderContractForAccount: jest.fn().mockReturnValue(null), saveProviderContract: jest.fn(), deleteProviderContractForAccount: jest.fn(), saveExecutionHistory: jest.fn(), getExecutionHistory: jest.fn().mockReturnValue([]) };
 
   const internalFsm: Partial<InternalFsmService> = {
     get: jest.fn().mockReturnValue(ToggleState.IDLE),
@@ -31,7 +32,7 @@ const makeMocks = () => {
     transition: jest.fn()
   };
 
-  return { gateway, redisService, discoveryService, pairingService, guardianService, registry, decoder, providerManager, chromeManager, commandRouter, internalBus, internalFsm };
+  return { gateway, redisService, discoveryService, pairingService, guardianService, registry, decoder, providerManager, chromeManager, commandRouter, internalBus, sqliteMock, internalFsm };
 };
 
 describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
@@ -48,6 +49,7 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
       ({} as any),
       mocks.gateway,
       mocks.redisService,
+      mocks.sqliteMock,
       mocks.discoveryService,
       mocks.pairingService,
       mocks.guardianService,
