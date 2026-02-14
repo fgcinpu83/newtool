@@ -74,3 +74,37 @@ jobs:
           echo "--- frontend node_modules snapshot ---"
           node -e "const fs=require('fs'); try{ const d='node_modules'; console.log(fs.existsSync(d)?'present':'missing'); }catch(e){}"
           echo "--- end diagnostic ---"
+
+      # --- E2E simulation using the CI-built frontend (simulates frontend socket actions)
+      - name: Start backend (background)
+        if: runner.os == 'Linux'
+        working-directory: ./backend
+        run: |
+          npm run start:prod &
+          sleep 1
+
+      - name: Start backend (background - Windows)
+        if: runner.os == 'Windows'
+        working-directory: ./backend
+        shell: powershell
+        run: |
+          Start-Process -NoNewWindow -FilePath npm -ArgumentList 'run','start:prod'
+          Start-Sleep -Seconds 1
+
+      - name: Run E2E simulation (simulate CI frontend)
+        working-directory: ./backend
+        run: |
+          node ../tools/e2e_ci_frontend_sim.js
+
+      - name: Stop backend (cleanup - Linux)
+        if: runner.os == 'Linux'
+        working-directory: ./backend
+        run: |
+          pkill -f 'node dist/src/main.js' || true
+
+      - name: Stop backend (cleanup - Windows)
+        if: runner.os == 'Windows'
+        working-directory: ./backend
+        shell: powershell
+        run: |
+          Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*dist\\src\\main.js*' } | Stop-Process -Force -ErrorAction SilentlyContinue || Write-Host 'no node dist process'
