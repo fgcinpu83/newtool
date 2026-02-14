@@ -23,7 +23,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
     async setConfig(config: any) {
         this.configCache = config;
-        await this.client.set('arbitrage_config', JSON.stringify(config));
+        try {
+            await this.client.set('arbitrage_config', JSON.stringify(config));
+        } catch (e) {
+            // Non-fatal: log and continue so missing Redis doesn't break bootstrap/tests
+            console.warn('[REDIS] setConfig failed (non-fatal):', e && e.message ? e.message : String(e));
+        }
         // Optional: Publish update event if needed for other instances
     }
 
@@ -58,26 +63,44 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
     async saveContract(account: string, provider: string, contract: any) {
         const key = `contract_${account.toLowerCase()}_${provider.toLowerCase()}`;
-        await this.client.set(key, JSON.stringify(contract), 'EX', 86400); // 24h TTL
+        try {
+            await this.client.set(key, JSON.stringify(contract), 'EX', 86400); // 24h TTL
+        } catch (e) {
+            console.warn('[REDIS] saveContract failed (non-fatal):', e && e.message ? e.message : String(e));
+        }
     }
 
     async loadContract(account: string, provider: string): Promise<any | null> {
         const key = `contract_${account.toLowerCase()}_${provider.toLowerCase()}`;
-        const raw = await this.client.get(key);
-        return raw ? JSON.parse(raw) : null;
+        try {
+            const raw = await this.client.get(key);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            console.warn('[REDIS] loadContract failed (non-fatal):', e && e.message ? e.message : String(e));
+            return null;
+        }
     }
 
     // 🛡️ v3.1 LOCKED - Generic set/get for session persistence
     async set(key: string, value: string, ttl?: number): Promise<void> {
-        if (ttl) {
-            await this.client.set(key, value, 'EX', ttl);
-        } else {
-            await this.client.set(key, value);
+        try {
+            if (ttl) {
+                await this.client.set(key, value, 'EX', ttl);
+            } else {
+                await this.client.set(key, value);
+            }
+        } catch (e) {
+            console.warn('[REDIS] set failed (non-fatal):', e && e.message ? e.message : String(e));
         }
     }
 
     async get(key: string): Promise<string | null> {
-        return await this.client.get(key);
+        try {
+            return await this.client.get(key);
+        } catch (e) {
+            console.warn('[REDIS] get failed (non-fatal):', e && e.message ? e.message : String(e));
+            return null;
+        }
     }
 
     invalidateCache() {
