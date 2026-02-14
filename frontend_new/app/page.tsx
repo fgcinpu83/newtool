@@ -10,6 +10,7 @@ import SensorPanel from '../components/SensorPanel'
 import ErrorStream from '../components/ErrorStream'
 import AccountPanel from '../components/AccountPanel'
 import LiveScanner from '../components/LiveScanner'
+import AdminPanel from '../components/AdminPanel'
 
 export default function Page() {
   const state = useBackendState()
@@ -24,6 +25,8 @@ export default function Page() {
 
       <div className="flex flex-col gap-4 flex-1 min-h-0">
         <ExecutionHistory state={state} />
+
+        <AdminPanel />
 
         <div className="flex-1 bg-surface-dark border border-border-dark rounded-lg flex flex-col min-h-0 shadow-sm">
           <div className="px-4 py-3 border-b border-border-dark flex justify-between items-center bg-background-dark/20">
