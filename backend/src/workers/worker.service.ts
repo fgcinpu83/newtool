@@ -545,6 +545,10 @@ export class WorkerService implements OnModuleInit {
                         const payload = { account: accountId, reason: 'BROWSER_OPEN_WAIT_ERROR', error: (e && (e as Error).message) || String(e), ts: Date.now() };
                         try { this.gateway.sendUpdate('toggle:failed', payload); } catch (err) {}
                         try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (err) {}
+
+                        // Also emit a system_log immediately (guaranteed observable in CI)
+                        try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] waitForBrowserOpen error: ${(e && (e as Error).message) ? (e as Error).message : String(e)}`, timestamp: Date.now() }); } catch (err2) {}
+
                         console.log('[TOGGLE_HANDLER] rethrowing waitForBrowserOpen error');
                         // Propagate unexpected errors so the router reports handler failure
                         throw e;
