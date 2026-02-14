@@ -11,6 +11,9 @@ jobs:
   test-backend:
     name: Backend CI (build + tests)
     runs-on: ${{ matrix.os }}
+    env:
+      NODE_ENV: test
+      CI: true
     strategy:
       fail-fast: false
       matrix:
@@ -90,6 +93,11 @@ jobs:
         run: |
           Start-Process -NoNewWindow -FilePath npm -ArgumentList 'run','start:prod'
           Start-Sleep -Seconds 1
+
+      - name: Install root tools dependencies (for E2E script)
+        working-directory: .
+        run: |
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
       - name: Run E2E simulation (simulate CI frontend)
         working-directory: ./backend
