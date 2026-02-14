@@ -455,184 +455,224 @@ export class WorkerService implements OnModuleInit {
 
         // Core ownerships
         registerHandler('TOGGLE_ACCOUNT', async (data) => {
-            // Normalize payload shapes: allow { accountId, enabled } OR { account, active }
-            const payload = data && data.payload ? data.payload : {};
-            const accountIdRaw = payload.accountId ?? payload.account ?? payload.acc ?? null;
-            const enabledRaw = (payload.enabled !== undefined) ? payload.enabled : (payload.active !== undefined ? payload.active : null);
-
-            // Accept only 'A' or 'B' as canonical accountId
-            const accountId = (typeof accountIdRaw === 'string') ? accountIdRaw.toUpperCase() : null;
-            const enabled = Boolean(enabledRaw);
-
-            if (!accountId || (accountId !== 'A' && accountId !== 'B')) {
-                console.error('[WORKER] TOGGLE_ACCOUNT received with invalid accountId:', accountIdRaw);
-                this.gateway.sendUpdate('system_log', { level: 'error', message: `[WORKER] Invalid TOGGLE_ACCOUNT payload: ${JSON.stringify(payload)}` });
-                return;
-            }
-
-            // Ensure AccountRuntime exists immediately on receiving a TOGGLE request
+            // Hard debug wrapper to prevent unhandled rejections/crashes — see COPILOT DEBUG PROMPT
             try {
-                const created = this.runtimeManager.get(accountId);
-                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'RUNTIME_CREATED', account: accountId }) + '\n'); } catch (e) {}
-            } catch (e) {
-                console.error('[WORKER] Failed to ensure AccountRuntime', e);
-            }
+                // Normalize payload shapes: allow { accountId, enabled } OR { account, active }
+                const payload = data && data.payload ? data.payload : {};
+                const accountIdRaw = payload.accountId ?? payload.account ?? payload.acc ?? null;
+                const enabledRaw = (payload.enabled !== undefined) ? payload.enabled : (payload.active !== undefined ? payload.active : null);
 
-            const ts = Date.now();
-            console.log(`[WORKER] 🔄 TOGGLE_ACCOUNT: ${accountId} -> ${enabled ? 'ON' : 'OFF'} @ ${new Date(ts).toISOString()}`);
+                // Accept only 'A' or 'B' as canonical accountId
+                const accountId = (typeof accountIdRaw === 'string') ? accountIdRaw.toUpperCase() : null;
+                const enabled = Boolean(enabledRaw);
 
-            // Diagnostic: write payload + lightweight stack + FSM snapshot to wire log for post-mortem
-            try {
-                const safePayload = (() => {
-                    try { return JSON.parse(JSON.stringify(data)); } catch (e) { return { note: 'unserializable payload' }; }
-                })();
-                const diag = {
-                    ts,
-                    event: 'TOGGLE_ACCOUNT',
-                    instance: this.instanceId,
-                    payload: safePayload,
-                    fsmState: this.internalFsm ? this.internalFsm.get(accountId) : 'unknown',
-                    stack: (new Error()).stack?.split('\n').slice(0,6).join('\n')
-                };
+                if (!accountId || (accountId !== 'A' && accountId !== 'B')) {
+                    console.error('[WORKER] TOGGLE_ACCOUNT received with invalid accountId:', accountIdRaw);
+                    this.gateway.sendUpdate('system_log', { level: 'error', message: `[WORKER] Invalid TOGGLE_ACCOUNT payload: ${JSON.stringify(payload)}` });
+                    return { success: false, error: 'invalid-account' };
+                }
+
+                // Ensure AccountRuntime exists immediately on receiving a TOGGLE request
                 try {
-                    fs.appendFileSync(this.wireLog, JSON.stringify(diag) + '\n');
+                    const created = this.runtimeManager.get(accountId);
+                    try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'RUNTIME_CREATED', account: accountId }) + '\n'); } catch (e) {}
                 } catch (e) {
-                    console.error('[WORKER] Failed to append diagnostic wire log', e);
+                    console.error('[WORKER] Failed to ensure AccountRuntime', e);
                 }
-            } catch (e) {
-                console.error('[WORKER] Diagnostic logging failed', e);
-            }
-            try {
-                // Use the shared InternalFsmService directly to ensure the WorkerService
-                // is the visible caller in the stack (guard inside InternalFsmService).
 
-                // If enabling an account and a Whitelabel URL is configured, request
-                // the BrowserAutomationService to open/focus the provider tab first.
-                if (enabled) {
-                    const targetUrl = accountId === 'A' ? this.config.urlA : this.config.urlB;
+                const ts = Date.now();
+                console.log(`[WORKER] 🔄 TOGGLE_ACCOUNT: ${accountId} -> ${enabled ? 'ON' : 'OFF'} @ ${new Date(ts).toISOString()}`);
 
-                    // Hardening B: validate whitelabel URL is configured before proceeding
-                    if (!targetUrl || targetUrl.trim().length === 0) {
-                        const payload = { account: accountId, reason: 'MISSING_WHITELABEL_URL', ts: Date.now() };
-                        console.warn(`[WORKER] 🔒 TOGGLE ON rejected for ${accountId} - missing whitelabel URL`);
-                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                        return;
-                    }
-
-                    const requestId = `toggle-open-${accountId}-${Date.now()}`;
-
-                    // Request browser open and fail fast if the internal bus publish errors
-                    try {
-                        this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
-                        this.lastOpenedAccount = accountId;
-                        this.lastOpenedTime = Date.now();
-                        this.gateway.sendUpdate('system_log', { level: 'info', message: `[WORKER] Requested browser open for ${accountId} -> ${targetUrl}`, timestamp: Date.now() });
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'REQUEST_OPEN_BROWSER_SENT', account: accountId, url: targetUrl, requestId }) + '\n'); } catch (e) {}
-                    } catch (e) {
-                        console.error('[WORKER] 🚨 Failed to request open browser (bus publish)', e);
-                        const payload = { account: accountId, reason: 'REQUEST_OPEN_BROWSER_FAILED', error: (e && e.message) ? e.message : String(e), ts: Date.now() };
-                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                        return;
-                    }
-
-                    // First: wait for an explicit browser-open acknowledgement emitted by BrowserAutomationService
-                    try {
-                        const opened = await this.waitForBrowserOpen(accountId, { timeoutMs: 2000, retries: 2, retryDelayMs: 500 });
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'BROWSER_OPEN_RESULT', account: accountId, opened }) + '\n'); } catch (e) {}
-                        if (!opened) {
-                            const payload = { account: accountId, reason: 'BROWSER_OPEN_TIMEOUT', ts: Date.now() };
-                            console.warn(`[WORKER] 🔧 Browser did not report opened for ${accountId} — rejecting toggle`);
-                            try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                            return;
-                        }
-                    } catch (e) {
-                        const payload = { account: accountId, reason: 'BROWSER_OPEN_WAIT_ERROR', error: (e && (e as Error).message) || String(e), ts: Date.now() };
-                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                        return;
-                    }
-
-                    // Then: Wait briefly (up to 5s) for Chrome readiness so FSM can proceed — if still not ready, reject toggle
-                    const waitUntil = async (pred: () => boolean, timeout = 5000) => {
-                        const start = Date.now();
-                        while (Date.now() - start < timeout) {
-                            if (pred()) return true;
-                            await new Promise(r => setTimeout(r, 200));
-                        }
-                        return false;
+                // Diagnostic: write payload + lightweight stack + FSM snapshot to wire log for post-mortem
+                try {
+                    const safePayload = (() => {
+                        try { return JSON.parse(JSON.stringify(data)); } catch (e) { return { note: 'unserializable payload' }; }
+                    })();
+                    const diag = {
+                        ts,
+                        event: 'TOGGLE_ACCOUNT',
+                        instance: this.instanceId,
+                        payload: safePayload,
+                        fsmState: this.internalFsm ? this.internalFsm.get(accountId) : 'unknown',
+                        stack: (new Error()).stack?.split('\n').slice(0,6).join('\n')
                     };
-
                     try {
-                        const ready = await waitUntil(() => this.chromeReady === true, 5000);
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'CHROME_READY_AFTER_OPEN', account: accountId, ready }) + '\n'); } catch (e) {}
-                        if (!ready) {
-                            const payload = { account: accountId, reason: 'CHROME_NOT_READY_AFTER_OPEN', ts: Date.now() };
-                            console.warn(`[WORKER] 🔧 Chrome not ready after open request for ${accountId} — rejecting toggle`);
+                        fs.appendFileSync(this.wireLog, JSON.stringify(diag) + '\n');
+                    } catch (e) {
+                        console.error('[WORKER] Failed to append diagnostic wire log', e);
+                    }
+                } catch (e) {
+                    console.error('[WORKER] Diagnostic logging failed', e);
+                }
+
+                try {
+                    // Use the shared InternalFsmService directly to ensure the WorkerService
+                    // is the visible caller in the stack (guard inside InternalFsmService).
+
+                    // If enabling an account and a Whitelabel URL is configured, request
+                    // the BrowserAutomationService to open/focus the provider tab first.
+                    if (enabled) {
+                        const targetUrl = accountId === 'A' ? this.config.urlA : this.config.urlB;
+
+                        // Hardening B: validate whitelabel URL is configured before proceeding
+                        if (!targetUrl || targetUrl.trim().length === 0) {
+                            const payload = { account: accountId, reason: 'MISSING_WHITELABEL_URL', ts: Date.now() };
+                            console.warn(`[WORKER] 🔒 TOGGLE ON rejected for ${accountId} - missing whitelabel URL`);
                             try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
                             try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                            return;
+                            return { success: false, error: 'missing-whitelabel' };
                         }
-                    } catch (e) {
-                        // treat unexpected errors as fatal for toggle
-                        const payload = { account: accountId, reason: 'CHROME_WAIT_ERROR', error: (e && (e as Error).message) || String(e), ts: Date.now() };
-                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                        return;
-                    }
 
-                    // Ensure FSM is IDLE before attempting transition
-                    if (this.internalFsm.get(accountId) !== ToggleState.IDLE) return;
+                        const requestId = `toggle-open-${accountId}-${Date.now()}`;
 
-                    // Request a one-time token and perform a trusted transition
-                    try {
-                        const t = this.internalFsm.issueToken();
-                        this.internalFsm.trustedTransition(accountId, ToggleState.STARTING, t);
-
-                        // Immediately complete STARTING -> RUNNING for the TOGGLE_ACCOUNT flow.
-                        // This ensures a user-triggered toggle reaches RUNNING once browser open
-                        // and readiness checks have passed (keeps behavior consistent with
-                        // `handleToggleFsm` while preserving the trustedTransition guard).
+                        // Request browser open and fail fast if the internal bus publish errors
                         try {
-                            await this.startObserverForAccount(accountId);
-                            await this.transitionFsm(accountId, ToggleState.RUNNING);
-                            console.log(`[FSM] ✅ Account ${accountId} observer started (TOGGLE_ACCOUNT flow)`);
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'TOGGLE_ACCOUNT_STARTED', account: accountId, fsm: 'RUNNING' }) + '\n'); } catch (e) {}
-                            try { this.gateway.sendUpdate('system_log', { level: 'info', message: `[TOGGLE] Account ${accountId} moved to RUNNING (TOGGLE_ACCOUNT flow)`, timestamp: Date.now() }); } catch (e) {}
-                        } catch (err2) {
-                            console.error(`[FSM] ❌ Account ${accountId} observer start failed (TOGGLE_ACCOUNT flow):`, err2);
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'TOGGLE_ACCOUNT_START_FAILED', account: accountId, error: String(err2) }) + '\n'); } catch (e) {}
-                            try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (e) { /* swallow */ }
+                            this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
+                            this.lastOpenedAccount = accountId;
+                            this.lastOpenedTime = Date.now();
+                            this.gateway.sendUpdate('system_log', { level: 'info', message: `[WORKER] Requested browser open for ${accountId} -> ${targetUrl}`, timestamp: Date.now() });
+                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'REQUEST_OPEN_BROWSER_SENT', account: accountId, url: targetUrl, requestId }) + '\n'); } catch (e) {}
+                        } catch (e) {
+                            console.error('[WORKER] 🚨 Failed to request open browser (bus publish)', e);
+                            const payload = { account: accountId, reason: 'REQUEST_OPEN_BROWSER_FAILED', error: (e && e.message) ? e.message : String(e), ts: Date.now() };
+                            try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
+                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
+                            return { success: false, error: 'request-open-failed' };
                         }
-                    } catch (err) {
-                        console.error('[WORKER] Trusted transition failed', err);
-                    }
-                } else {
-                    if (this.internalFsm.get(accountId) !== ToggleState.RUNNING) return;
-                    try {
-                        const t = this.internalFsm.issueToken();
-                        this.internalFsm.trustedTransition(accountId, ToggleState.STOPPING, t);
-                    } catch (err) {
-                        console.error('[WORKER] Trusted transition failed', err);
-                    }
-                }
-            } catch (e) {
-                console.error(`[WORKER] FSM transition failed: ${(e as Error).message}`);
-            }
 
-            // keep existing config behavior in sync
-            if (accountId === 'A') {
-                this.config.accountA_active = !!enabled;
-                if (!enabled) this.resetAccount('A');
+                        // First: wait for an explicit browser-open acknowledgement emitted by BrowserAutomationService
+                        try {
+                            const opened = await this.waitForBrowserOpen(accountId, { timeoutMs: 2000, retries: 2, retryDelayMs: 500 });
+                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'BROWSER_OPEN_RESULT', account: accountId, opened }) + '\n'); } catch (e) {}
+                            if (!opened) {
+                                const payload = { account: accountId, reason: 'BROWSER_OPEN_TIMEOUT', ts: Date.now() };
+                                console.warn(`[WORKER] 🔧 Browser did not report opened for ${accountId} — rejecting toggle`);
+                                try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
+                                try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
+                                // Harden: ensure FSM stays IDLE and mark provider RED
+                                try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (e) {}
+                                try { const ctx = this.accountContexts.get(accountId as any); if (ctx) ctx.providerStatus = 'RED'; } catch (e) {}
+                                try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Failed to open browser for ${accountId}` }); } catch (e) {}
+                                return { success: false, error: 'browser-open-timeout' };
+                            }
+                        } catch (e) {
+                            const payload = { account: accountId, reason: 'BROWSER_OPEN_WAIT_ERROR', error: (e && (e as Error).message) || String(e), ts: Date.now() };
+                            try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
+                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
+                            try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (e) {}
+                            try { const ctx = this.accountContexts.get(accountId as any); if (ctx) ctx.providerStatus = 'RED'; } catch (e) {}
+                            try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Error waiting for browser open for ${accountId}` }); } catch (e) {}
+                            return { success: false, error: 'browser-wait-error' };
+                        }
+
+                        // Then: Wait briefly (up to 5s) for Chrome readiness so FSM can proceed — if still not ready, reject toggle
+                        const waitUntil = async (pred: () => boolean, timeout = 5000) => {
+                            const start = Date.now();
+                            while (Date.now() - start < timeout) {
+                                if (pred()) return true;
+                                await new Promise(r => setTimeout(r, 200));
+                            }
+                            return false;
+                        };
+
+                        try {
+                            const ready = await waitUntil(() => this.chromeReady === true, 5000);
+                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'CHROME_READY_AFTER_OPEN', account: accountId, ready }) + '\n'); } catch (e) {}
+                            if (!ready) {
+                                const payload = { account: accountId, reason: 'CHROME_NOT_READY_AFTER_OPEN', ts: Date.now() };
+                                console.warn(`[WORKER] 🔧 Chrome not ready after open request for ${accountId} — rejecting toggle`);
+                                try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
+                                try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
+                                try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (e) {}
+                                try { const ctx = this.accountContexts.get(accountId as any); if (ctx) ctx.providerStatus = 'RED'; } catch (e) {}
+                                try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Chrome not ready after open for ${accountId}` }); } catch (e) {}
+                                return { success: false, error: 'chrome-not-ready' };
+                            }
+                        } catch (e) {
+                            // treat unexpected errors as fatal for toggle
+                            const payload = { account: accountId, reason: 'CHROME_WAIT_ERROR', error: (e && (e as Error).message) || String(e), ts: Date.now() };
+                            try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
+                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
+                            try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (e) {}
+                            try { const ctx = this.accountContexts.get(accountId as any); if (ctx) ctx.providerStatus = 'RED'; } catch (e) {}
+                            try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Chrome wait error for ${accountId}` }); } catch (e) {}
+                            return { success: false, error: 'chrome-wait-error' };
+                        }
+
+                        // Ensure FSM is IDLE before attempting transition
+                        if (this.internalFsm.get(accountId) !== ToggleState.IDLE) return { success: false, error: 'invalid-fsm-state' };
+
+                        // Request a one-time token and perform a trusted transition
+                        try {
+                            const t = this.internalFsm.issueToken();
+                            this.internalFsm.trustedTransition(accountId, ToggleState.STARTING, t);
+
+                            // Immediately complete STARTING -> RUNNING for the TOGGLE_ACCOUNT flow.
+                            // This ensures a user-triggered toggle reaches RUNNING once browser open
+                            // and readiness checks have passed (keeps behavior consistent with
+                            // `handleToggleFsm` while preserving the trustedTransition guard).
+                            try {
+                                await this.startObserverForAccount(accountId);
+                                await this.transitionFsm(accountId, ToggleState.RUNNING);
+                                console.log(`[FSM] ✅ Account ${accountId} observer started (TOGGLE_ACCOUNT flow)`);
+                                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'TOGGLE_ACCOUNT_STARTED', account: accountId, fsm: 'RUNNING' }) + '\n'); } catch (e) {}
+                                try { this.gateway.sendUpdate('system_log', { level: 'info', message: `[TOGGLE] Account ${accountId} moved to RUNNING (TOGGLE_ACCOUNT flow)`, timestamp: Date.now() }); } catch (e) {}
+                            } catch (err2) {
+                                console.error(`[FSM] ❌ Account ${accountId} observer start failed (TOGGLE_ACCOUNT flow):`, err2);
+                                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'TOGGLE_ACCOUNT_START_FAILED', account: accountId, error: String(err2) }) + '\n'); } catch (e) {}
+                                // FSM hardening: ensure we don't stay in STARTING and set provider to RED
+                                try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (e) { /* swallow */ }
+                                try { const ctx = this.accountContexts.get(accountId as any); if (ctx) ctx.providerStatus = 'RED'; } catch (e) {}
+                                try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Observer start failed for ${accountId} - ${String(err2)}` }); } catch (e) {}
+                                return { success: false, error: 'observer-start-failed' };
+                            }
+                        } catch (err) {
+                            console.error('[WORKER] Trusted transition failed', err);
+                            try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (e) { /* swallow */ }
+                            try { const ctx = this.accountContexts.get(accountId as any); if (ctx) ctx.providerStatus = 'RED'; } catch (e) {}
+                            try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Trusted transition failed for ${accountId}` }); } catch (e) {}
+                            return { success: false, error: 'trusted-transition-failed' };
+                        }
+                    } else {
+                        if (this.internalFsm.get(accountId) !== ToggleState.RUNNING) return { success: false, error: 'not-running' };
+                        try {
+                            const t = this.internalFsm.issueToken();
+                            this.internalFsm.trustedTransition(accountId, ToggleState.STOPPING, t);
+                        } catch (err) {
+                            console.error('[WORKER] Trusted transition failed', err);
+                            try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Trusted transition failed during STOP for ${accountId}` }); } catch (e) {}
+                            return { success: false, error: 'trusted-transition-failed' };
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[WORKER] FSM transition failed: ${(e as Error).message}`);
+                    // FSM safety: ensure we are not left in STARTING
+                    try { await this.transitionFsm(accountId, ToggleState.IDLE); } catch (err) { /* swallow */ }
+                    try { const ctx = this.accountContexts.get(accountId as any); if (ctx) ctx.providerStatus = 'RED'; } catch (err) {}
+                    try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] FSM failed for ${accountId}: ${(e as Error).message}` }); } catch (err) {}
+                    return { success: false, error: 'fsm-failed' };
+                }
+
+                // keep existing config behavior in sync
+                if (accountId === 'A') {
+                    this.config.accountA_active = !!enabled;
+                    if (!enabled) this.resetAccount('A');
+                }
+                if (accountId === 'B') {
+                    this.config.accountB_active = !!enabled;
+                    if (!enabled) this.resetAccount('B');
+                }
+                try { await this.redisService.setConfig(this.config) } catch (e) {}
+                this.broadcastStatus();
+                return { success: true };
+            } catch (err: any) {
+                // Top-level guard: ensure TOGGLE cannot crash the process
+                console.error('[TOGGLE_ACCOUNT_FATAL]', err);
+                try { (this.internalBus as any).emit && (this.internalBus as any).emit('system_log', { level: 'error', source: 'TOGGLE_ACCOUNT', message: err?.message || 'Unknown error', stack: err?.stack }); } catch (e) {}
+                // FSM safety: try to recover account(s)
+                try { if (err && err.account) { await this.transitionFsm(err.account, ToggleState.IDLE); const ctx = this.accountContexts.get(err.account); if (ctx) ctx.providerStatus = 'RED'; } } catch (e) {}
+                return { success: false, error: err && err.message ? err.message : String(err) };
             }
-            if (accountId === 'B') {
-                this.config.accountB_active = !!enabled;
-                if (!enabled) this.resetAccount('B');
-            }
-            try { await this.redisService.setConfig(this.config) } catch (e) {}
-            this.broadcastStatus();
         })
 
         registerHandler('GET_STATUS', async () => { this.broadcastStatus(); })

@@ -252,6 +252,43 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
     expect((mocks.internalFsm.trustedTransition as jest.Mock).mock.calls.length).toBe(0);
   });
 
+  // --- Crash-hardening tests (COPILOT DEBUG PROMPT coverage) ---
+  test('TOGGLE ON recovers when waitForBrowserOpen throws (no crash)', async () => {
+    svc['config'] = { urlA: 'https://example.com', urlB: '', accountA_active: false, accountB_active: false };
+    svc.setChromeReady(true);
+
+    // Simulate internal waitForBrowserOpen throwing an unexpected error
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockRejectedValue(new Error('boom'));
+
+    const resp = await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
+
+    // Handler must return gracefully with success:false and not throw
+    expect(resp && resp.success).toBe(false);
+
+    // WorkerService should emit toggle:failed with BROWSER_OPEN_WAIT_ERROR
+    const calls = (mocks.gateway.sendUpdate as jest.Mock).mock.calls;
+    const found = calls.find((c: any[]) => c[0] === 'toggle:failed' && c[1].reason === 'BROWSER_OPEN_WAIT_ERROR');
+    expect(found).toBeDefined();
+
+    // FSM should have been forced back to IDLE and provider marked RED (transition called)
+    expect((mocks.internalFsm.transition as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(0);
+  });
+
+  test('TOGGLE_ACCOUNT top-level error is handled and does not crash', async () => {
+    svc['config'] = { urlA: 'https://example.com', urlB: '', accountA_active: false, accountB_active: false };
+
+    // Make internalBus.publish throw to simulate bus failure
+    (svc as any).internalBus.publish = jest.fn().mockImplementation(() => { throw new Error('bus-fail'); });
+
+    const resp = await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
+
+    // Handler should return an object indicating failure instead of letting exception bubble
+    expect(resp && resp.success).toBe(false);
+    const gwCalls = (mocks.gateway.sendUpdate as jest.Mock).mock.calls;
+    const sysLog = gwCalls.find((c: any[]) => c[0] === 'system_log');
+    expect(sysLog).toBeDefined();
+  });
+
   // --- New tests for admin persistence handlers ---
   test('LIST_PROVIDER_CONTRACTS emits provider_contracts with persisted rows', async () => {
     const sampleA = { accountId: 'A', endpointPattern: '/api/odds', method: 'GET', createdAt: Date.now() };

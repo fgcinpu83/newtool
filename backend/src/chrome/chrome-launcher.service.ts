@@ -76,7 +76,9 @@ export class ChromeLauncher {
     private async _ensureRunning(port: number): Promise<LaunchResult> {
         // 1. Probe — is Chrome already listening?
         if (await this.isPortResponsive(port)) {
-            this.logger.log(`[${port}] Chrome already running — reusing`);
+            // CDP already present — log explicit diagnostic so post-mortem can distinguish reuse vs launch-failure
+            this.logger.log(`[CDP_ALREADY_RUNNING] [${port}] Chrome already running — reusing`);
+            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CDP_ALREADY_RUNNING', port }) + '\n'); } catch (e) {}
             return { launched: false, reused: true, port, message: 'Chrome already running' };
         }
 
@@ -111,13 +113,17 @@ export class ChromeLauncher {
             '--no-first-run',
         ];
 
-        this.logger.log(`[${port}] Spawning Chrome → ${binary}`);
+        this.logger.log(`[CHROME_LAUNCH_ATTEMPT] [${port}] Spawning Chrome → ${binary} (userDataDir=${userDataDir})`);
+        try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_ATTEMPT', port, userDataDir }) + '\n'); } catch (e) {}
 
         // 4. Spawn (detached, unref — Chrome lives beyond our process)
         try {
-            this.spawnDetached(binary, args);
+            this.spawnDetached(binary, args, { watchEarlyExitMs: 5000, port, userDataDir });
         } catch (err: any) {
-            return { launched: false, reused: false, port, message: `Spawn failed: ${err.message}` };
+            const msg = `Spawn failed: ${err && err.message ? err.message : String(err)}`;
+            this.logger.error(`[CHROME_LAUNCH_FAIL] [${port}] ${msg}`);
+            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_FAIL', port, message: msg }) + '\n'); } catch (e) {}
+            return { launched: false, reused: false, port, message: msg };
         }
 
         // 5. Wait for port to become responsive (up to 8 seconds)
@@ -157,14 +163,42 @@ export class ChromeLauncher {
         return false;
     }
 
-    /** Spawn Chrome detached so it outlives our process. */
-    private spawnDetached(binary: string, args: string[]): void {
+    /** Spawn Chrome detached so it outlives our process. Adds optional "early-exit" watch for quick diagnostics. */
+    private spawnDetached(binary: string, args: string[], opts?: { watchEarlyExitMs?: number; port?: number; userDataDir?: string }): void {
         const { spawn } = require('child_process') as typeof import('child_process');
+        const start = Date.now();
         const child = spawn(binary, args, {
             detached: true,
             stdio: 'ignore',
             windowsHide: false,
         });
+
+        // Watch for early exit (helpful to detect permission/launch issues quickly).
+        if (opts && opts.watchEarlyExitMs && opts.watchEarlyExitMs > 0) {
+            const timeoutMs = opts.watchEarlyExitMs;
+            const port = opts.port;
+            const userDataDir = opts.userDataDir;
+
+            const onExit = (code: number | null, signal: string | null) => {
+                const elapsed = Date.now() - start;
+                // If Chrome exited earlier than the watch window, emit diagnostic logs
+                if (elapsed < timeoutMs) {
+                    const msg = `[CHROME_EXIT_EARLY] port=${port} userDataDir=${userDataDir} exitCode=${code} signal=${signal} elapsedMs=${elapsed}`;
+                    try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_EXIT_EARLY', port, code, signal, elapsed }) + '\n'); } catch (e) {}
+                    // Also surface to logger for immediate visibility
+                    this.logger.error(msg);
+                }
+            };
+
+            // Note: even for detached children, `exit` event may be emitted before unref
+            child.on('exit', onExit);
+
+            // Set a safety timer to remove the listener after the watch window
+            setTimeout(() => {
+                try { child.removeListener('exit', onExit); } catch (e) { /* swallow */ }
+            }, timeoutMs + 50);
+        }
+
         child.unref();
     }
 

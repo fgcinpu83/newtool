@@ -24,6 +24,8 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ChromeConnectionManager } from './chrome-connection.manager';
 import WebSocket from 'ws';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // ─── State Machine ───────────────────────────────────
 export type CDPSessionState = 'IDLE' | 'ATTACHING' | 'ATTACHED' | 'ERROR';
@@ -131,9 +133,22 @@ export class CDPSessionManager {
         // ── Precondition: Chrome MUST be CONNECTED ──
         const chromeInfo = this.chromeManager.getInfo(port);
         if (chromeInfo.state !== 'CONNECTED') {
-            const msg = `[CDPSessionManager] Cannot attach — ChromeConnectionManager port ${port} is ${chromeInfo.state}, expected CONNECTED`;
+            const msg = `[CDP_ATTACH_FAIL] ChromeConnectionManager port ${port} is ${chromeInfo.state} (expected CONNECTED)`;
             this.logger.error(msg);
-            throw new Error(msg);
+            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CDP_ATTACH_FAIL', port, chromeState: chromeInfo.state }) + '\n'); } catch (e) {}
+
+            // Safely mark session as ERROR (don't throw) to avoid bubbling into caller and
+            // potentially crashing the TOGGLE flow. Return session info so callers can
+            // handle the attach failure gracefully.
+            this.sessions.set(port, {
+                port,
+                state: 'ERROR',
+                wsUrl: null,
+                attachedAt: null,
+                errorMessage: msg,
+            });
+
+            return this.getInfo(port);
         }
 
         // ── Transition: IDLE/ERROR → ATTACHING ──
@@ -169,6 +184,7 @@ export class CDPSessionManager {
             });
 
             this.logger.error(`[${port}] CDP attach FAILED — ${err.message}`);
+            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CDP_ATTACH_FAIL', port, message: err.message }) + '\n'); } catch (e) {}
             return this.getInfo(port);
         }
     }

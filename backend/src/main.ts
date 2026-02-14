@@ -14,14 +14,14 @@ async function bootstrap() {
             const fs = require('fs');
             const wireLog = require('path').join(process.cwd(), 'logs', 'wire_debug.log');
             process.on('uncaughtException', (err: any) => {
-                const entry = { ts: Date.now(), event: 'UNCATCHED_EXCEPTION', message: err?.message || String(err), stack: err?.stack };
+                const entry = { ts: Date.now(), tag: 'UNCAUGHT_EXCEPTION', message: err?.message || String(err), stack: err?.stack };
                 try { fs.appendFileSync(wireLog, JSON.stringify(entry) + '\n'); } catch (e) {}
-                console.error('[FATAL] Uncaught Exception:', err);
+                console.error('[UNCAUGHT_EXCEPTION]', err);
             });
             process.on('unhandledRejection', (reason: any) => {
-                const entry = { ts: Date.now(), event: 'UNHANDLED_REJECTION', reason: String(reason) };
+                const entry = { ts: Date.now(), tag: 'UNHANDLED_REJECTION', reason: String(reason) };
                 try { fs.appendFileSync(wireLog, JSON.stringify(entry) + '\n'); } catch (e) {}
-                console.error('[FATAL] Unhandled Rejection:', reason);
+                console.error('[UNHANDLED_REJECTION]', reason);
             });
         } catch (e) { console.warn('[MAIN] Failed to install global error handlers', e); }
 
