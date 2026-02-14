@@ -55,3 +55,22 @@ jobs:
           echo "--- node_modules/better-sqlite3 (if present) ---"
           node -e "const fs=require('fs'); const d='node_modules'; try{ if(fs.existsSync(d)){ const names=fs.readdirSync(d).filter(n=>n.startsWith('better-sqlite3')); if(names.length) console.log(names.join('\\n')); else console.log('(none)'); } }catch(e){}"
           echo "--- end diagnostic ---"
+
+      - name: Install frontend dependencies (try `npm ci`, fallback to `npm install`)
+        working-directory: ./frontend_new
+        run: |
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Build frontend
+        working-directory: ./frontend_new
+        env:
+          CI: true
+        run: npm run build
+
+      - name: List frontend node_modules (diagnostic)
+        working-directory: ./frontend_new
+        if: always()
+        run: |
+          echo "--- frontend node_modules snapshot ---"
+          node -e "const fs=require('fs'); try{ const d='node_modules'; console.log(fs.existsSync(d)?'present':'missing'); }catch(e){}"
+          echo "--- end diagnostic ---"
