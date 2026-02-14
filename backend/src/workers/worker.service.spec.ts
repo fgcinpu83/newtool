@@ -274,6 +274,24 @@ describe('WorkerService TOGGLE_ACCOUNT hardening (B)', () => {
     expect((mocks.internalFsm.transition as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(0);
   });
 
+  test('TOGGLE ON emits system_log when waitForBrowserOpen throws', async () => {
+    svc['config'] = { urlA: 'https://example.com', urlB: '', accountA_active: false, accountB_active: false };
+    svc.setChromeReady(true);
+
+    // Cause waitForBrowserOpen to throw so outer catch path runs
+    jest.spyOn(svc as any, 'waitForBrowserOpen').mockRejectedValue(new Error('boom'));
+
+    const resp = await mocks.commandRouter.route({ type: 'TOGGLE_ACCOUNT', payload: { account: 'A', enabled: true } });
+
+    // Handler should indicate failure
+    expect(resp && resp.success).toBe(false);
+
+    // A system_log entry must be emitted for top-level TOGGLE failures
+    const gwCalls = (mocks.gateway.sendUpdate as jest.Mock).mock.calls;
+    const sysLog = gwCalls.find((c: any[]) => c[0] === 'system_log' && c[1] && typeof c[1].message === 'string' && String(c[1].message).includes('TOGGLE'));
+    expect(sysLog).toBeDefined();
+  });
+
   test('TOGGLE_ACCOUNT top-level error is handled and does not crash', async () => {
     svc['config'] = { urlA: 'https://example.com', urlB: '', accountA_active: false, accountB_active: false };
 
