@@ -1,7 +1,7 @@
 const io = require('socket.io-client');
 const http = require('http');
 
-const server = 'http://127.0.0.1:3001';
+const server = process.env.BACKEND_URL || 'http://localhost:3001';
 let socket = null;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -36,7 +36,8 @@ async function waitForBackendHealth(timeoutMs = 10000, interval = 250) {
   while (Date.now() < deadline) {
     try {
       const code = await new Promise((resolve, reject) => {
-        const req = http.request({ hostname: '127.0.0.1', port: 3001, path: '/health', method: 'GET', timeout: 2000 }, res => { resolve(res.statusCode); res.on('data', () => {}); });
+        const hostname = 'localhost';
+        const req = http.request({ hostname, port: 3001, path: '/health', method: 'GET', timeout: 2000 }, res => { resolve(res.statusCode); res.on('data', () => {}); });
         req.on('error', () => reject(new Error('no-http')));
         req.end();
       });
