@@ -455,6 +455,7 @@ export class WorkerService implements OnModuleInit {
 
         // Core ownerships
         registerHandler('TOGGLE_ACCOUNT', async (data) => {
+            console.log('[TOGGLE_HANDLER] start');
             // Normalize payload shapes: allow { accountId, enabled } OR { account, active }
             const payload = data && data.payload ? data.payload : {};
             const accountIdRaw = payload.accountId ?? payload.account ?? payload.acc ?? null;
@@ -522,20 +523,12 @@ export class WorkerService implements OnModuleInit {
 
                     const requestId = `toggle-open-${accountId}-${Date.now()}`;
 
-                    // Request browser open and fail fast if the internal bus publish errors
-                    try {
-                        this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
-                        this.lastOpenedAccount = accountId;
-                        this.lastOpenedTime = Date.now();
-                        this.gateway.sendUpdate('system_log', { level: 'info', message: `[WORKER] Requested browser open for ${accountId} -> ${targetUrl}`, timestamp: Date.now() });
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'REQUEST_OPEN_BROWSER_SENT', account: accountId, url: targetUrl, requestId }) + '\n'); } catch (e) {}
-                    } catch (e) {
-                        console.error('[WORKER] 🚨 Failed to request open browser (bus publish)', e);
-                        const payload = { account: accountId, reason: 'REQUEST_OPEN_BROWSER_FAILED', error: (e && e.message) ? e.message : String(e), ts: Date.now() };
-                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                        return;
-                    }
+                    // Request browser open — allow internal bus failures to bubble to the router
+                    this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
+                    this.lastOpenedAccount = accountId;
+                    this.lastOpenedTime = Date.now();
+                    this.gateway.sendUpdate('system_log', { level: 'info', message: `[WORKER] Requested browser open for ${accountId} -> ${targetUrl}`, timestamp: Date.now() });
+                    try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'REQUEST_OPEN_BROWSER_SENT', account: accountId, url: targetUrl, requestId }) + '\n'); } catch (e) {}
 
                     // First: wait for an explicit browser-open acknowledgement emitted by BrowserAutomationService
                     try {
@@ -550,9 +543,11 @@ export class WorkerService implements OnModuleInit {
                         }
                     } catch (e) {
                         const payload = { account: accountId, reason: 'BROWSER_OPEN_WAIT_ERROR', error: (e && (e as Error).message) || String(e), ts: Date.now() };
-                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                        return;
+                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (err) {}
+                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (err) {}
+                        console.log('[TOGGLE_HANDLER] rethrowing waitForBrowserOpen error');
+                        // Propagate unexpected errors so the router reports handler failure
+                        throw e;
                     }
 
                     // Then: Wait briefly (up to 5s) for Chrome readiness so FSM can proceed — if still not ready, reject toggle
@@ -620,6 +615,11 @@ export class WorkerService implements OnModuleInit {
                 }
             } catch (e) {
                 console.error(`[WORKER] FSM transition failed: ${(e as Error).message}`);
+                // Emit a system_log so UI/ops see top-level failures for TOGGLE
+                try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] Handler failed: ${(e as Error).message}`, timestamp: Date.now() }); } catch (err) {}
+                console.log('[TOGGLE_HANDLER] outer catch rethrow');
+                // Propagate unexpected internal errors so the command router sees handler failure
+                throw e;
             }
 
             // keep existing config behavior in sync
