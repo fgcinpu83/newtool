@@ -1,14 +1,34 @@
 const io = require('socket.io-client');
 const http = require('http');
+const WebSocket = require('ws');
 
 const server = process.env.BACKEND_URL || 'http://localhost:3001';
 let socket = null;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+async function websocketProbe(timeout = 3000) {
+  // Try a low-level websocket to the socket.io websocket endpoint — diagnostic + transport check
+  try {
+    const wsUrl = server.replace(/^http/, 'ws') + '/socket.io/?EIO=4&transport=websocket';
+    console.log(`WS PROBE: attempting raw WebSocket -> ${wsUrl}`);
+    return await new Promise((resolve) => {
+      const ws = new WebSocket(wsUrl, { handshakeTimeout: Math.max(1000, timeout) });
+      let done = false;
+      const cleanup = () => { try { ws.terminate(); } catch (_) {} };
+      ws.once('open', () => { done = true; cleanup(); resolve(true); });
+      ws.once('error', (e) => { if (!done) { done = true; cleanup(); resolve(false); } });
+      setTimeout(() => { if (!done) { done = true; cleanup(); resolve(false); } }, timeout);
+    });
+  } catch (e) {
+    return false;
+  }
+}
+
 async function connectWithRetry({ maxAttempts = 8, initialDelay = 200, maxDelay = 2000 } = {}) {
+  // Primary: normal socket.io connect (polling + websocket)
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(`SIO: connect attempt ${attempt}/${maxAttempts}`);
+    console.log(`SIO: connect attempt ${attempt}/${maxAttempts} (polling+websocket)`);
     const s = io(server, { transports: ['polling', 'websocket'], timeout: 5000 });
     try {
       await new Promise((resolve, reject) => {
@@ -28,7 +48,38 @@ async function connectWithRetry({ maxAttempts = 8, initialDelay = 200, maxDelay 
       }
     }
   }
-  throw new Error('socket.io connection failed after retries');
+
+  // If regular attempts fail, probe raw WebSocket transport — sometimes polling is blocked but websocket works
+  const wsOk = await websocketProbe(2000);
+  if (wsOk) {
+    console.log('WS PROBE: raw WebSocket OK — retrying socket.io using websocket-only transport');
+    // Try websocket-only socket.io connects (shorter retry series)
+    for (let attempt = 1; attempt <= Math.ceil(maxAttempts / 2); attempt++) {
+      console.log(`SIO: websocket-only connect attempt ${attempt}/${Math.ceil(maxAttempts/2)}`);
+      const s = io(server, { transports: ['websocket'], forceNew: true, timeout: 3000 });
+      try {
+        await new Promise((resolve, reject) => {
+          const onConnect = () => { s.off('connect_error', onError); resolve(); };
+          const onError = (err) => { s.off('connect', onConnect); reject(err); };
+          s.once('connect', onConnect);
+          s.once('connect_error', onError);
+        });
+        return s;
+      } catch (err) {
+        try { s.close(); } catch (_) {}
+        const delay = Math.min(initialDelay * 2 ** (attempt - 1), maxDelay);
+        console.error(`SIO websocket-only attempt ${attempt} failed:`, err && (err.message || err));
+        if (attempt < Math.ceil(maxAttempts / 2)) {
+          console.log(`SIO (ws-only): retrying in ${delay}ms`);
+          await sleep(delay);
+        }
+      }
+    }
+  } else {
+    console.warn('WS PROBE: raw WebSocket probe failed (network/policy may block socket.io polling and ws)');
+  }
+
+  throw new Error('socket.io connection failed after retries (including websocket fallback)');
 }
 
 async function waitForBackendHealth(timeoutMs = 10000, interval = 250) {
