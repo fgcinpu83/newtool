@@ -35,12 +35,15 @@ export class CommandRouterService {
       return { success: true, result: res }
     } catch (e: any) {
       this.logger.error(`Handler for ${cmd.type} failed: ${e?.message || e}`);
-      (this as any).__routing = false;
-      return { success: false, message: e?.message || String(e) };
+      // Append to wire debug log for post-mortem
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const wireLog = path.join(process.cwd(), 'logs', 'wire_debug.log');
+        fs.appendFileSync(wireLog, JSON.stringify({ ts: Date.now(), event: 'COMMAND_HANDLER_ERROR', command: cmd.type, error: (e && e.message) ? e.message : String(e) }) + '\n');
+      } catch (err) { /* non-fatal */ }
+      // Return structured failure so callers don't get an uncaught exception
+      return { success: false, message: (e && e.message) ? e.message : String(e), type: cmd.type }
     }
-  }
-
-  getRegisteredCommands(): string[] {
-    return Array.from(this.owners.keys())
   }
 }

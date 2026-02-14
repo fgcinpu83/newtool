@@ -44,7 +44,7 @@ Since the `member.cmd368.com` endpoint is confirmed to be reachable by Browser (
 **Instruction:**
 1.  Install/Open a System-Wide VPN (e.g., ProtonVPN, Cloudflare WARP, or similar).
 2.  Ensure it is in **TUN/TAP Mode** (System Default), NOT just a browser extension.
-3.  Restart the Backend (`START_SYSTEM.bat`).
+3.  Restart the Backend (`ORCHESTRATOR_MASTER.bat`).
 
 Once the VPN is active, the `CmdWorker` will automatically succeed as it now retries cleanly and uses robust TLS parameters.
 

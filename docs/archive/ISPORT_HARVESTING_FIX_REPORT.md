@@ -25,7 +25,7 @@
 
 ## 4. NEXT STEPS (USER ACTION REQUIRED)
 The system is ready. The "0 Odds" issue is resolved on the code side. To start harvesting:
-1.  **Run `START_SYSTEM.bat`**.
+1.  **Run `ORCHESTRATOR_MASTER.bat`**.
 2.  **Open Dashboard** (localhost:3000).
 3.  **Toggle Account B (QQ188) OFF**, then **ON**.
 4.  **Login Manually** in the popped-up browser tab.

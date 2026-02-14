@@ -61,7 +61,7 @@ adb -s emulator-5554 shell settings delete global global_http_proxy_port
 
 ### STEP 4: Buat Script Startup
 
-Buat file `START_SYSTEM.bat` di `e:\newtool\`:
+(LEGACY) `START_SYSTEM.bat` removed. Use `ORCHESTRATOR_MASTER.bat` in the repository root to start the full system.
 
 ```batch
 @echo off
@@ -108,7 +108,7 @@ pause
 ## 📋 SOP HARIAN (SETELAH SETUP)
 
 ### A. Di Host PC (Sekali di Awal Hari):
-Double-click **`START_SYSTEM.bat`** → Biarkan jalan sampai selesai
+Double-click **`ORCHESTRATOR_MASTER.bat`** → Biarkan jalan sampai selesai
 
 ### B. Di Emulator (4 Langkah Saja):
 

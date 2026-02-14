@@ -59,5 +59,9 @@ export interface BackendState {
   opportunities: Opportunity[]
   executionHistory: ExecutionRecord[]
   logs: LogEntry[]
+  // Optional compatibility fields emitted by backend
+  accountA_active?: boolean
+  accountB_active?: boolean
+  providers?: any
 }
 

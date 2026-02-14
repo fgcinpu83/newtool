@@ -1,6 +1,7 @@
 # ARBITRAGE SYSTEM MASTER CONTEXT: E:NEWTOOL
 > ARCHITECTURE: Desktop Browser Edition v3.1
 > STATUS: CRITICAL - DO NOT DELETE
+> AUTHORITATIVE: This file is the canonical source for the *User Workflow* and operational procedures. Other docs must reference this file for operator steps.
 
 ## 1. PROJECT GOAL
 Membangun sistem Arbitrage "Desktop Browser Edition" yang menangkap data via Extension (Network Sensor) dan memprosesnya di Backend (Stream Processor) dengan latensi minimum.

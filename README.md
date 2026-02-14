@@ -174,7 +174,7 @@ Summary of recent engineering work (SABA/ISPORT flow, safe dry-run tooling, and 
    - [backend/test_process_bet_simulator.js](backend/test_process_bet_simulator.js) — builds ProcessBet payloads and can POST them to a target URL (use with mock receiver for safety).
    - [backend/mock_processbet_receiver.js](backend/mock_processbet_receiver.js) — local HTTP receiver for validating `/Betting/ProcessBet` POSTs.
    - [backend/scripts/check_sinfo.js](backend/scripts/check_sinfo.js) — utility to list and inspect `sinfo_*` keys in Redis.
-- **START scripts improved**: `START_SYSTEM.bat` rewritten for reliability; `START_SYSTEM_DEBUG.bat` added to spawn backend/frontend with logs redirected to `logs/`.
+- **START scripts improved**: `ORCHESTRATOR_MASTER.bat` is the canonical startup orchestrator; `START_SYSTEM_DEBUG.bat` (legacy) remains for compatibility.
 
 Results validated locally:
 - Emitted synthetic `endpoint_captured` events; `sinfo_A` was persisted to Redis.
@@ -206,6 +206,8 @@ Next steps recommended:
 - Register the real account in `harvested_contracts.json` / contract registry to route real ingestion to the correct contract implementation.
 
 ## 🎮 Complete User Workflow
+
+> Operator workflow is canonical in `e:\newtool\_MASTER_CONTEXT.md` — see the **User Workflow** section there for the authoritative, up-to-date operator steps.
 
 ### Phase 1: System Setup (5 minutes)
 1. **Start Backend**: `cd backend && npm start`

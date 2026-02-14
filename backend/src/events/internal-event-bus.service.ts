@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
+import * as fs from 'fs';
+import * as path from 'path';
 import { EventEmitter } from 'events'
 
 export type InternalEvent = { type: string; payload?: any }
@@ -11,6 +13,8 @@ export class InternalEventBusService {
   publish(type: string, payload?: any) {
     try {
       this.logger.log(`InternalEvent publish: ${type}`)
+      // persistent trace for internal events to aid debugging (temporary)
+      try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'INTERNAL_PUBLISH', type, payload: payload ? (typeof payload === 'object' ? JSON.stringify(payload).substring(0,1000) : String(payload)) : null }) + '\n'); } catch (e) { /* swallow */ }
       this.ee.emit(type, payload)
     } catch (e) {
       this.logger.error('InternalEvent publish failed', e as any)

@@ -50,7 +50,7 @@ echo.
 echo  Next steps:
 echo  1. Login to your sportsbook accounts in separate tabs
 echo  2. Use your whitelabel URLs when prompted by the extension
-echo  3. Run START_SYSTEM.bat to start backend and frontend
+echo  3. Run ORCHESTRATOR_MASTER.bat to start backend and frontend
 echo.
 echo  DevTools Protocol: http://localhost:%DEBUG_PORT%/json
 echo.

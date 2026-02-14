@@ -172,7 +172,7 @@ Setelah setup selesai, user **TIDAK BOLEH**:
 
 ### 1. Startup Sistem
 
-Jalankan `START_SYSTEM.bat`:
+Jalankan `ORCHESTRATOR_MASTER.bat`:
 - ✅ Redis starts
 - ✅ ADB tunnel established
 - ✅ Backend starts
