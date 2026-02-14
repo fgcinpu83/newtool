@@ -53,5 +53,5 @@ jobs:
         if: always()
         run: |
           echo "--- node_modules/better-sqlite3 (if present) ---"
-          ls -la node_modules/better-sqlite3* || true
+          node -e "const fs=require('fs'); const d='node_modules'; try{ if(fs.existsSync(d)){ const names=fs.readdirSync(d).filter(n=>n.startsWith('better-sqlite3')); if(names.length) console.log(names.join('\\n')); else console.log('(none)'); } }catch(e){}"
           echo "--- end diagnostic ---"
