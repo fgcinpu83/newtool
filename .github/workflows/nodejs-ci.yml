@@ -127,7 +127,25 @@ jobs:
         shell: powershell
         run: |
           Start-Process -NoNewWindow -FilePath npm -ArgumentList 'run','start:prod'
-          $ok = $false; for ($i=0; $i -lt 40; $i++) { try { $r = Invoke-WebRequest -Uri 'http://localhost:3001/health' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -eq 200) { $ok = $true; break } } catch {}; Start-Sleep -Milliseconds 500 }; if (-not $ok) { Write-Error 'backend not ready'; exit 1 } else { Write-Host 'backend ready' }
+          # Try IPv4, IPv6 and localhost to avoid failures when 'localhost' resolves to ::1
+          $ok = $false
+          $hosts = @('127.0.0.1','[::1]','localhost')
+          for ($i=0; $i -lt 80; $i++) {
+            foreach ($h in $hosts) {
+              try {
+                $url = "http://$h:3001/health"
+                $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+                if ($r.StatusCode -eq 200) { $ok = $true; break 2 }
+              } catch { }
+            }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $ok) {
+            Write-Host '--- BACKEND HEALTHCHECK FAILED: dumping netstat & process list ---'
+            netstat -an | Select-String ':3001' || Write-Host 'no listening sockets on :3001'
+            Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*dist\\src\\main.js*' } | Format-Table Id,ProcessName,Path -AutoSize
+            Write-Error 'backend not ready'; exit 1
+          } else { Write-Host 'backend ready' }
           node ../tools/e2e_ci_frontend_sim.js
 
       - name: Stop backend (cleanup - Linux)
