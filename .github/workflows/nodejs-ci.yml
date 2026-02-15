@@ -94,6 +94,9 @@ jobs:
       - name: Start backend (background) + Run E2E (Linux)
         if: runner.os == 'Linux'
         working-directory: ./backend
+        env:
+          # prefer websocket transport for self-hosted / localhost jobs (avoids xhr/polling flakiness)
+          E2E_SOCKET_TRANSPORT: ${{ contains(runner.labels, 'self-hosted') && 'websocket' || '' }}
         run: |
           npm run start:prod &
           for i in $(seq 1 40); do
@@ -118,6 +121,9 @@ jobs:
       - name: Start backend (background) + Run E2E (Windows)
         if: runner.os == 'Windows'
         working-directory: ./backend
+        env:
+          # prefer websocket transport for self-hosted / localhost jobs (avoids xhr/polling flakiness)
+          E2E_SOCKET_TRANSPORT: ${{ contains(runner.labels, 'self-hosted') && 'websocket' || '' }}
         shell: powershell
         run: |
           Start-Process -NoNewWindow -FilePath npm -ArgumentList 'run','start:prod'
