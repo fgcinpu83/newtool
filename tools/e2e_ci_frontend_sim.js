@@ -26,14 +26,48 @@ async function websocketProbe(timeout = 3000) {
 }
 
 async function connectWithRetry({ maxAttempts = 8, initialDelay = 200, maxDelay = 2000 } = {}) {
-  // Primary: normal socket.io connect (polling + websocket)
+  // Choose connection preference: websocket-first for localhost or when overridden
+  const parsed = new URL(server);
+  const host = parsed.hostname;
+  const preferWebSocket = (process.env.E2E_SOCKET_TRANSPORT === 'websocket') || ['127.0.0.1', 'localhost', '::1'].includes(host);
+
+  if (preferWebSocket) {
+    console.log('SIO: prefer websocket-only transport (localhost or forced)');
+    // Try websocket-only first
+    for (let attempt = 1; attempt <= Math.ceil(maxAttempts / 1.5); attempt++) {
+      console.log(`SIO: websocket-only connect attempt ${attempt}/${Math.ceil(maxAttempts/1.5)}`);
+      const s = io(server, { transports: ['websocket'], forceNew: true, timeout: 4000 });
+      try {
+        await new Promise((resolve, reject) => {
+          const onConnect = () => { s.off('connect_error', onError); resolve(); };
+          const onError = (err) => { s.off('connect', onConnect); reject(err); };
+          s.once('connect', onConnect);
+          s.once('connect_error', onError);
+        });
+        return s;
+      } catch (err) {
+        try { s.close(); } catch (_) {}
+        const delay = Math.min(initialDelay * 2 ** (attempt - 1), maxDelay);
+        console.error(`SIO websocket-only attempt ${attempt} failed:`, err && (err.message || err));
+        if (attempt < Math.ceil(maxAttempts / 1.5)) {
+          console.log(`SIO (ws-only): retrying in ${delay}ms`);
+          await sleep(delay);
+        }
+      }
+    }
+
+    // If ws-only didn't work, fall through to polling+websocket attempts below
+    console.log('SIO: websocket-only attempts exhausted, falling back to polling+websocket');
+  }
+
+  // Normal socket.io connect (polling + websocket)
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`SIO: connect attempt ${attempt}/${maxAttempts} (polling+websocket)`);
     const s = io(server, { transports: ['polling', 'websocket'], timeout: 5000 });
     try {
       await new Promise((resolve, reject) => {
-        const onConnect = () => { s.off('connect_error', onError); resolve(); };
-        const onError = (err) => { s.off('connect', onConnect); reject(err); };
+        const onConnect = () => { console.log('connectWithRetry: socket connect event'); s.off('connect_error', onError); resolve(); };
+        const onError = (err) => { console.log('connectWithRetry: socket connect_error event', err && (err.message || err)); s.off('connect', onConnect); reject(err); };
         s.once('connect', onConnect);
         s.once('connect_error', onError);
       });
@@ -111,7 +145,31 @@ async function waitForBackendHealth(timeoutMs = 10000, interval = 250) {
   if (!healthy) console.warn('Proceeding to socket connect even though /health failed (will rely on connect retries)');
 
   try {
-    socket = await connectWithRetry();
+    // Fast-path: try a short websocket-only connect on localhost or when forced
+    let directTried = false;
+    if (process.env.E2E_SOCKET_TRANSPORT === 'websocket' || server.includes('localhost') || server.includes('127.0.0.1')) {
+      directTried = true;
+      try {
+        console.log('MAIN: attempting short websocket-only connect (fast-path)');
+        const s = io(server, { transports: ['websocket'], forceNew: true, timeout: 3000 });
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => { try { s.close(); } catch (_) {} ; reject(new Error('ws-short-timeout')); }, 3000);
+          s.once('connect', () => { clearTimeout(timer); resolve(); });
+          s.once('connect_error', (e) => { clearTimeout(timer); reject(e); });
+        });
+        socket = s;
+        console.log('MAIN: websocket-only fast-path connected');
+      } catch (e) {
+        console.log('MAIN: websocket-only fast-path failed, falling back to retry:', e && e.message);
+      }
+    }
+
+    if (!socket) {
+      socket = await connectWithRetry();
+    }
+
+    console.log('MAIN: socket object:', { connected: !!socket?.connected, id: socket && socket.id });
+
     // register handlers after socket is available (registerSocketHandlers is declared below)
     registerSocketHandlers(socket);
   } catch (err) {
@@ -121,15 +179,15 @@ async function waitForBackendHealth(timeoutMs = 10000, interval = 250) {
 })();
 
 function registerSocketHandlers(socket) {
-  socket.on('connect', async () => {
-    console.log('SIO connected', socket.id);
-    socket.on('provider_contracts', d => console.log('EVENT provider_contracts', JSON.stringify(d)));
-    socket.on('execution_history_db', d => console.log('EVENT execution_history_db', JSON.stringify(d)));
-    socket.on('fsm:transition', d => console.log('EVENT fsm:transition', JSON.stringify(d)));
-    socket.on('system_log', d => console.log('EVENT system_log', d && d.message));
-    socket.on('toggle:failed', d => console.log('EVENT toggle:failed', JSON.stringify(d)));
-
+  const onConnected = async () => {
     try {
+      console.log('SIO connected', socket.id);
+      socket.on('provider_contracts', d => console.log('EVENT provider_contracts', JSON.stringify(d)));
+      socket.on('execution_history_db', d => console.log('EVENT execution_history_db', JSON.stringify(d)));
+      socket.on('fsm:transition', d => console.log('EVENT fsm:transition', JSON.stringify(d)));
+      socket.on('system_log', d => console.log('EVENT system_log', d && d.message));
+      socket.on('toggle:failed', d => console.log('EVENT toggle:failed', JSON.stringify(d)));
+
       console.log('STEP: update config');
       socket.emit('command', { type: 'UPDATE_CONFIG', payload: { urlA: 'https://qq188best.com' } });
       await sleep(200);
@@ -180,7 +238,14 @@ function registerSocketHandlers(socket) {
       socket.close();
       process.exit(2);
     }
-  });
+  };
+
+  // attach handler and invoke immediately if already connected
+  socket.on('connect', onConnected);
+  if (socket.connected) {
+    // already connected — call handler directly
+    onConnected().catch(err => { console.error('onConnected error', err && err.message); });
+  }
 
   socket.on('connect_error', e => {
     console.error('connect_error (handler)', e && (e.message || e));
