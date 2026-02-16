@@ -78,6 +78,16 @@ export class ChromeLauncher {
         // This makes the runtime deterministic for CI and unit tests that run with NODE_ENV=test.
         const IS_CI = process.env.CI === 'true';
         const IS_TEST = process.env.NODE_ENV === 'test';
+        const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+        // In production strict mode, mock mode is forbidden
+        if (IS_PRODUCTION && (IS_CI || IS_TEST)) {
+            const msg = 'Production strict mode forbids CI/TEST mock mode';
+            this.logger.error(msg);
+            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'PROD_STRICT_MOCK_FORBIDDEN', port, message: msg }) + '\n'); } catch (e) {}
+            return { launched: false, reused: false, port, message: msg };
+        }
+
         if (IS_CI || IS_TEST) {
             this.logger.log(`[CHROME_LAUNCH_MOCK] CI/TEST mode — simulating Chrome on port ${port}`);
             try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_MOCK', port }) + '\n'); } catch (e) {}
@@ -97,6 +107,7 @@ export class ChromeLauncher {
         if (!binary) {
             const msg = 'Chrome binary not found on this machine';
             this.logger.error(msg);
+            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_NOT_FOUND', port, message: msg }) + '\n'); } catch (e) {}
             return { launched: false, reused: false, port, message: msg };
         }
 

@@ -21,6 +21,6 @@ export interface ExecutionResult {
         BetID?: string;
     };
 
-    FinalStatus: "SUCCESS" | "ABORTED" | "PARTIAL" | "FAILED";
+    FinalStatus: "SUCCESS" | "ABORTED" | "PARTIAL" | "FAILED" | "HEDGED";
     Timestamp: number;
 }

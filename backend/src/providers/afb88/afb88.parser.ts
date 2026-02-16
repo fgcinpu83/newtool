@@ -15,20 +15,25 @@ import { ParseResult, ParsedOdds } from '../base.provider';
 import { AFB88_CONFIG, isGzipPayload } from './afb88.config';
 import * as zlib from 'zlib';
 
+// Maximum entries kept in per-call match cache
+const MATCH_CACHE_MAX = 500;
+
 // Key patterns
 const HOME_KEYS = /^(home|h_?name|hteam|team.?a|team.?1|ht|htnm)$/i;
 const AWAY_KEYS = /^(away|a_?name|ateam|team.?b|team.?2|at|atnm)$/i;
 const MATCH_ID_KEYS = /^(match|event|game|fixture|id|mid)$/i;
 const LEAGUE_KEYS = /^(league|comp|tournament|division|group|lgnm)$/i;
 
-// Match cache for short update packets
-const matchCache: Map<string, { home: string; away: string; league?: string }> = new Map();
-const MATCH_CACHE_MAX = 500;
+// NOTE: module-level matchCache removed to avoid shared mutable state.
+// A per-call cache is threaded through parser helpers from `parseAfb88Payload`.
 
 /**
  * Main parser function untuk AFB88
  */
 export function parseAfb88Payload(data: any): ParseResult {
+    // Per-call match cache to avoid global mutable state
+    const matchCache: Map<string, { home: string; away: string; league?: string }> = new Map();
+    const MATCH_CACHE_MAX = 500;
     const result: ParseResult = {
         odds: [],
         balance: null,
@@ -49,7 +54,7 @@ export function parseAfb88Payload(data: any): ParseResult {
         result.balance = extractBalance(payload);
         
         // Extract matches and odds
-        const matches = extractMatches(payload);
+        const matches = extractMatches(payload, 0, matchCache);
         result.odds = matches;
         result.rawMatchCount = new Set(matches.map(m => m.matchId)).size;
         
@@ -102,20 +107,20 @@ function extractBalance(target: any, depth = 0): number | null {
 /**
  * Recursive match extractor
  */
-function extractMatches(target: any, depth = 0): ParsedOdds[] {
+function extractMatches(target: any, depth = 0, matchCache?: Map<string, { home: string; away: string; league?: string }>): ParsedOdds[] {
     const results: ParsedOdds[] = [];
     if (depth > 12 || !target) return results;
     
     if (Array.isArray(target)) {
         // AFB88 often uses positional arrays
-        const fromPositional = extractFromPositionalArray(target);
+        const fromPositional = extractFromPositionalArray(target, matchCache);
         if (fromPositional.length > 0) {
             results.push(...fromPositional);
         }
         
         for (const item of target) {
             if (typeof item === 'object') {
-                results.push(...extractMatches(item, depth + 1));
+                results.push(...extractMatches(item, depth + 1, matchCache));
             }
         }
         return results;
@@ -130,7 +135,7 @@ function extractMatches(target: any, depth = 0): ParsedOdds[] {
     const hasAwayKey = keys.some(k => AWAY_KEYS.test(k));
     
     if (hasHomeKey || hasAwayKey) {
-        const matchData = extractMatchFromObject(target, keys);
+        const matchData = extractMatchFromObject(target, keys, matchCache);
         if (matchData) {
             results.push(...matchData);
         }
@@ -140,7 +145,7 @@ function extractMatches(target: any, depth = 0): ParsedOdds[] {
     for (const key of keys) {
         const val = target[key];
         if (val && typeof val === 'object') {
-            results.push(...extractMatches(val, depth + 1));
+            results.push(...extractMatches(val, depth + 1, matchCache));
         }
     }
     
@@ -150,7 +155,7 @@ function extractMatches(target: any, depth = 0): ParsedOdds[] {
 /**
  * Extract match from object
  */
-function extractMatchFromObject(obj: any, keys: string[]): ParsedOdds[] | null {
+function extractMatchFromObject(obj: any, keys: string[], matchCache?: Map<string, { home: string; away: string; league?: string }>): ParsedOdds[] | null {
     let home = '';
     let away = '';
     let matchId = '';
@@ -186,11 +191,13 @@ function extractMatchFromObject(obj: any, keys: string[]): ParsedOdds[] | null {
     }
     
     // Cache for short updates
-    if (matchCache.size >= MATCH_CACHE_MAX) {
-        const firstKey = matchCache.keys().next().value;
-        if (firstKey) matchCache.delete(firstKey);
+    if (matchCache) {
+        if (matchCache.size >= MATCH_CACHE_MAX) {
+            const firstKey = matchCache.keys().next().value;
+            if (firstKey) matchCache.delete(firstKey);
+        }
+        matchCache.set(matchId, { home, away, league });
     }
-    matchCache.set(matchId, { home, away, league });
     
     const results: ParsedOdds[] = [];
     const baseEntry = {
@@ -233,14 +240,14 @@ function extractMatchFromObject(obj: any, keys: string[]): ParsedOdds[] | null {
 /**
  * Extract from positional array (AFB88 common format)
  */
-function extractFromPositionalArray(arr: any[]): ParsedOdds[] {
+function extractFromPositionalArray(arr: any[], matchCache?: Map<string, { home: string; away: string; league?: string }>): ParsedOdds[] {
     if (!Array.isArray(arr) || arr.length < 5) return [];
     
     const results: ParsedOdds[] = [];
     
     // Check for short update (cached matchId)
     const potentialMatchId = String(arr[0] || '');
-    if (arr.length < 20 && matchCache.has(potentialMatchId)) {
+    if (arr.length < 20 && matchCache && matchCache.has(potentialMatchId)) {
         const cached = matchCache.get(potentialMatchId)!;
         const numbers: number[] = [];
         

@@ -68,7 +68,7 @@ export class WorkerService implements OnModuleInit {
         B1: 'INACTIVE', B2: 'INACTIVE', B3: 'INACTIVE', B4: 'INACTIVE', B5: 'INACTIVE'
     };
     private balance: Record<string, string> = { A: '0.00', B: '0.00' };
-    private capturedEndpoints: Map<string, any> = new Map();
+    // capturedEndpoints removed — module-level unused mutable map eliminated
 
     // 🔥 MULTI-PROVIDER REGISTRY with State Machine
     private providerRegistry: Map<string, ProviderEntry> = new Map();
@@ -441,6 +441,27 @@ export class WorkerService implements OnModuleInit {
 
         console.log('[WORKER] Now listening for endpoint_captured events');
 
+        // Account Health Watchdog: runs every 3s, marks provider RED if no traffic >10s
+        try {
+            const IS_CI = process.env.CI === 'true';
+            if (!IS_CI) {
+                setInterval(() => {
+                    try {
+                        const now = Date.now();
+                        for (const ctx of (this.accountContexts as any).getAll()) {
+                            const last = ctx.lastTrafficAt || 0;
+                            if (last === 0 || (now - last) > 10000) {
+                                if (ctx.providerStatus !== 'RED') {
+                                    ctx.providerStatus = 'RED';
+                                    try { this.gateway.sendUpdate('system_log', { level: 'warn', message: `[WATCHDOG] ${ctx.accountId} providerStatus -> RED (no traffic)`, timestamp: Date.now() }); } catch (e) {}
+                                }
+                            }
+                        }
+                    } catch (e) { /* swallow watchdog errors to avoid crashing worker */ }
+                }, 3000);
+            }
+        } catch (e) {}
+
         // Register command ownership with CommandRouterService
         const registerHandler = (cmdType: string, handler: (c:any)=>Promise<any>|any) => {
             try {
@@ -655,20 +676,31 @@ export class WorkerService implements OnModuleInit {
                 const account = (String(payload.accountId || payload.account || '').toUpperCase() === 'B') ? 'B' : 'A';
                 if (account !== 'A' && account !== 'B') return { success: false, error: 'invalid-account' };
 
+                // Prevent duplicate active contracts
                 const existing = this.sqliteService.getProviderContractForAccount(account as any);
                 if (existing) {
                     return { success: false, error: 'contract-already-exists' };
                 }
 
+                // Basic validation
+                const endpointPattern = payload.endpointPattern;
+                const method = String(payload.method || 'GET').toUpperCase();
+
+                if (typeof endpointPattern !== 'string' || !endpointPattern.trim()) return { success: false, error: 'invalid-endpointPattern' };
+                if (!(method === 'GET' || method === 'POST')) return { success: false, error: 'invalid-method' };
+
+                // Require at least one non-empty schema (request or response)
+                const hasRequestSchema = payload.requestSchema && typeof payload.requestSchema === 'object' && Object.keys(payload.requestSchema).length > 0;
+                const hasResponseSchema = payload.responseSchema && typeof payload.responseSchema === 'object' && Object.keys(payload.responseSchema).length > 0;
+                if (!hasRequestSchema && !hasResponseSchema) return { success: false, error: 'missing-schema' };
+
                 const row = {
                     accountId: account as any,
-                    endpointPattern: String(payload.endpointPattern || '').trim(),
-                    method: String(payload.method || 'GET').toUpperCase(),
-                    requestSchema: payload.requestSchema ? JSON.stringify(payload.requestSchema) : null,
-                    responseSchema: payload.responseSchema ? JSON.stringify(payload.responseSchema) : null,
+                    endpointPattern: String(endpointPattern || '').trim(),
+                    method: method,
+                    requestSchema: hasRequestSchema ? JSON.stringify(payload.requestSchema) : null,
+                    responseSchema: hasResponseSchema ? JSON.stringify(payload.responseSchema) : null,
                 } as any;
-
-                if (!row.endpointPattern) return { success: false, error: 'missing-endpointPattern' };
 
                 this.sqliteService.saveProviderContract(row);
 

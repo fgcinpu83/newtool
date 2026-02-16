@@ -9,10 +9,9 @@ import { EventIdentity } from '../../utils/identity.utils';
 let rawMirrorCount = 0;
 const MAX_RAW_MIRRORS = 3;
 
-// 🎯 v7.4 MATCH CACHE - Remember MatchId -> Teams for pure odds packets
-const matchCache: Map<string, { home: string; away: string; league?: string; scheduledTime?: string }> = new Map();
-const MATCH_CACHE_MAX = 500;
-const MATCH_CACHE_TTL = 300000; // 5 minutes
+// NOTE: match cache removed from module scope to avoid shared mutable state.
+// A local per-call cache will be used inside `parseAfbPacket` to preserve
+// parser behaviour without global state.
 
 // FUZZY KEY PATTERNS (case-insensitive)
 const HOME_PATTERNS = /home|h_?name|hteam|team.?a|team.?1|ht|local|host|htnm/i;
@@ -22,6 +21,11 @@ const MATCH_PATTERNS = /match|event|game|fixture|id/i;
 const LEAGUE_PATTERNS = /league|comp|tournament|division|group|lgnm/i;
 
 export function parseAfbPacket(obj: any): { odds: any[], balance: number | null } {
+    // Per-call matchCache to avoid module-level mutable state
+    const matchCache: Map<string, { home: string; away: string; league?: string; scheduledTime?: string }> = new Map();
+    const MATCH_CACHE_MAX = 500;
+    const MATCH_CACHE_TTL = 300000; // 5 minutes
+
     let odds: any[] = [];
     let balance: number | null = null;
     const wireLog = path.join(process.cwd(), 'logs', 'wire_debug.log');
