@@ -131,6 +131,29 @@ export class ChromeConnectionManager {
                 return this.getInfo(port);
             }
 
+            // For port 9223 prefer a host-proxy-aware HEAD probe against host.docker.internal
+            // (some host proxies reject node-fetch requests unless Host header is present).
+            if (port === 9223) {
+                try {
+                    const status = await this.probeHostDockerHead(port, '/json/version');
+                    this.logger.debug(`[ATTACH_HEAD_RESPONSE] port=${port} status=${status}`);
+                    if (status >= 200 && status < 500) {
+                        const tabs = await this.fetchTabCount(port);
+                        this.transition(port, 'CONNECTED', {
+                            tabs,
+                            lastChecked: Date.now(),
+                            attachedAt: Date.now(),
+                            errorMessage: undefined,
+                        });
+                        this.logger.log(`[OBSERVE] Chrome connection successful - port ${port} connected with ${tabs} tabs (host-bridge probe)`);
+                        return this.getInfo(port);
+                    }
+                } catch (err) {
+                    this.logger.debug(`[ATTACH_HEAD_RESPONSE] probe error port=${port} err=${String(err)}`);
+                }
+            }
+
+            // Fallback: regular fetch to localhost
             const response = await fetch(`http://localhost:${port}/json/version`, {
                 signal: AbortSignal.timeout(3000),
             });
@@ -255,9 +278,25 @@ export class ChromeConnectionManager {
         this.assertConnected(port);
         const fullUrl = url.startsWith('http') ? url : `https://${url}`;
 
-        // Primary attempt: use /json/new (HTTP). Many environments support this.
+        // Primary attempt: use /json/new (HTTP). For port 9223 prefer a host.docker.internal raw PUT
         try {
             const endpoint = `http://localhost:${port}/json/new?${fullUrl}`;
+
+            if (port === 9223) {
+                // try raw HTTP PUT against host.docker.internal with Host header first
+                try {
+                    const raw = await this.rawPutHostDockerJsonNew(port, endpoint);
+                    this.logger.debug(`[OPEN_TAB_RAW_PUT] port=${port} status=${raw.status}`);
+                    if (raw.status >= 200 && raw.status < 400 && raw.body) {
+                        try { return JSON.parse(raw.body); } catch (err) { /* fall through to fetch */ }
+                    }
+                } catch (err) {
+                    this.logger.debug(`[OPEN_TAB_RAW_PUT_ERROR] port=${port} err=${String(err)}`);
+                }
+
+                // fallthrough to fetch against localhost (or host) below
+            }
+
             let res = await fetch(endpoint, { method: 'PUT', signal: AbortSignal.timeout(5000) });
             if (!res.ok) {
                 res = await fetch(endpoint, { signal: AbortSignal.timeout(5000) });
@@ -332,5 +371,45 @@ export class ChromeConnectionManager {
         } catch {
             return 0;
         }
+    }
+
+    /**
+     * Probe host.docker.internal with a raw HTTP HEAD and inject Host header
+     * so environments that require Host: localhost:9223 will respond.
+     */
+    private probeHostDockerHead(port: number, path: string = '/json/version'): Promise<number> {
+        return new Promise<number>((resolve) => {
+            const http = require('http');
+            const opts = { method: 'HEAD', host: 'host.docker.internal', port, path, headers: { Host: `localhost:${port}` }, timeout: 3000 } as any;
+            const req = http.request(opts, (res: any) => { resolve(res.statusCode || 0); });
+            req.on('error', () => resolve(0));
+            req.on('timeout', () => { try { req.destroy(); } catch (e) {} resolve(0); });
+            req.end();
+        });
+    }
+
+    /**
+     * Perform a raw HTTP PUT to host.docker.internal for /json/new and return
+     * status + body (used as a robust fallback when node-fetch is rejected by
+     * a host proxy).
+     */
+    private rawPutHostDockerJsonNew(port: number, endpoint: string): Promise<{ status: number; body?: string }> {
+        return new Promise((resolve) => {
+            const http = require('http');
+            try {
+                const url = new URL(endpoint.replace('localhost', 'host.docker.internal'));
+                const opts = { method: 'PUT', hostname: url.hostname, port: Number(url.port), path: url.pathname + url.search, headers: { Host: `localhost:${port}` }, timeout: 5000 } as any;
+                const req = http.request(opts, (res: any) => {
+                    const chunks: Buffer[] = [];
+                    res.on('data', (c: Buffer) => chunks.push(c));
+                    res.on('end', () => resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf8') }));
+                });
+                req.on('error', () => resolve({ status: 0 }));
+                req.on('timeout', () => { try { req.destroy(); } catch (e) {} resolve({ status: 0 }); });
+                req.end();
+            } catch (err) {
+                resolve({ status: 0 });
+            }
+        });
     }
 }

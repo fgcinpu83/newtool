@@ -162,6 +162,27 @@ export class ChromeLauncher {
 
     /** Probe CDP /json/version endpoint — true if Chrome responds. */
     private async isPortResponsive(port: number): Promise<boolean> {
+        // Special-case port 9223: prefer probing host.docker.internal with a raw HEAD
+        // and Host: localhost:9223 header because some host proxies require it.
+        if (port === 9223) {
+            try {
+                const http = require('http');
+                const opts = { method: 'HEAD', host: 'host.docker.internal', port, path: '/json/version', headers: { Host: 'localhost:9223' }, timeout: 2000 } as any;
+                const status = await new Promise<number>((resolve) => {
+                    const req = http.request(opts, (res: any) => resolve(res.statusCode || 0));
+                    req.on('error', () => resolve(0));
+                    req.on('timeout', () => { try { req.destroy(); } catch (e) {} resolve(0); });
+                    req.end();
+                });
+                const result = status >= 200 && status < 500;
+                this.logger.debug(`[HOST_PROBE] host.docker.internal:9223 -> ${result}`);
+                return result;
+            } catch (e) {
+                this.logger.debug(`[HOST_PROBE] host.docker.internal:9223 probe error ${String(e)}`);
+                return false;
+            }
+        }
+
         try {
             const res = await fetch(`http://localhost:${port}/json/version`, {
                 signal: AbortSignal.timeout(2000),
