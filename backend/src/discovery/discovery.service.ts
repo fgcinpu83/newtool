@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AppGateway } from '../gateway.module';
 import { NormalizationService } from '../normalization/normalization.service';
 import { RedisService } from '../shared/redis.service';
+import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -54,6 +55,8 @@ export class DiscoveryService implements OnModuleInit {
 
     // 🛡️ v5.2 PASSIVE OBSERVER MODE - No auto-clicks
     private readonly PASSIVE_MODE_UNTIL = 1800000000000; // 🛡️ Extended to 2027 to ensure manual control
+    // Force active flag (can be flipped on startup in non-CI dev environments)
+    private forceActiveMode = false;
 
     // 🛡️ v5.2 SCANNER PRIORITY MODE - Activated when B > 20
     private scannerPriorityActive = false;
@@ -69,10 +72,11 @@ export class DiscoveryService implements OnModuleInit {
     constructor(
         private gateway: AppGateway,
         private normalization: NormalizationService,
-        private redis: RedisService
+        private redis: RedisService,
+        private chromeManager: ChromeConnectionManager,
     ) { }
 
-    onModuleInit() {
+    async onModuleInit(): Promise<void> {
         this.logger.log('🛡️ LOB-STATE-ENGINE v3.7: Active Ghost Match Elimination');
         this.bypassAllFilters = false; // 🛡️ PRODUCTION: Filters enabled
 
@@ -100,7 +104,31 @@ export class DiscoveryService implements OnModuleInit {
         // 🛡️ v5.2 WARM-UP Registry B for large data ingestion
         this.warmupRegistryB();
         this.logToDisk('DiscoveryService Initialized (v5.2 Final Sync Ready)');
-        this.logger.log('🛡️ v5.2 PASSIVE MODE: Auto-navigation DISABLED. Waiting for manual navigation.');
+
+        const IS_CI = process.env.CI === 'true';
+        if (!IS_CI) {
+            // In developer / non-CI environments we force active mode so the orchestrator
+            // will attempt to attach/bridge to host Chrome automatically instead of
+            // waiting for manual navigation.
+            this.forceActiveMode = true;
+            this.logger.log('🟢 FORCE ACTIVE MODE: CI=false — auto-navigation ENABLED.');
+            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), tag: 'FORCE_ACTIVE_MODE', message: 'CI=false -> active mode forced' }) + '\n'); } catch (e) { }
+            // Notify UI/clients
+            try { this.gateway.sendUpdate('system_log', { level: 'info', message: 'FORCE ACTIVE MODE (CI=false)' }); } catch (e) { }
+            // Also proactively attempt to attach to host Chrome on port 9223
+            // when running in developer (non-CI) mode so toggles can open tabs.
+            setTimeout(async () => {
+                try {
+                    try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), tag: 'FORCE_ATTACH_ATTEMPT', port: 9223 }) + '\n'); } catch (e) { }
+                    await this.chromeManager.attach(9223);
+                    try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), tag: 'FORCE_ATTACH_DONE', port: 9223 }) + '\n'); } catch (e) { }
+                } catch (attachErr) {
+                    try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), tag: 'FORCE_ATTACH_ERROR', port: 9223, error: (attachErr && (attachErr as Error).message) || String(attachErr) }) + '\n'); } catch (e) { }
+                }
+            }, 500);
+        } else {
+            this.logger.log('🛡️ v5.2 PASSIVE MODE: Auto-navigation DISABLED. Waiting for manual navigation.');
+        }
 
         // 🔥 v6.3: Periodic Recheck for Orphans (Every 5 seconds)
         setInterval(() => this.recheckOrphanedMatches(), 5000);
@@ -777,7 +805,13 @@ export class DiscoveryService implements OnModuleInit {
         this.checkScannerPriority(countB);
 
         // 🛡️ v5.2 PASSIVE OBSERVER MODE - No auto-navigation
-        const isPassiveMode = Date.now() < this.PASSIVE_MODE_UNTIL;
+        // Force active mode when not running in CI so host Chrome can be used
+        const IS_CI = process.env.CI === 'true';
+        const isPassiveMode = IS_CI ? (Date.now() < this.PASSIVE_MODE_UNTIL) : false;
+        if (!isPassiveMode && !IS_CI) {
+            // Log that we've forced active mode for local/host integration
+            this.logger.log('🔧 FORCE ACTIVE MODE: CI=false -> attempting auto-navigation and host.docker.internal attach');
+        }
 
         // 🛡️ v4.0 AUTO-REFRESH LOGIC (DISABLED IN PASSIVE MODE)
         if (countB < 5) {

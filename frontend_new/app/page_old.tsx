@@ -387,6 +387,10 @@ export default function Page() {
     // 🛡️ v11.0: Track sent browser commands to prevent duplicates
     const sentBrowserCommands = React.useRef<Set<string>>(new Set());
 
+    // Debounce timers for URL input emits to avoid flooding backend
+    const urlEmitTimers = useRef<{ [k: string]: any }>({ A: null, B: null });
+    const URL_DEBOUNCE_MS = 600; // ms
+
     const toggleAccount = (acc: 'A' | 'B') => {
         if (toggleLock.current[acc]) return; // Prevent double-click
         toggleLock.current[acc] = true;
@@ -754,10 +758,28 @@ export default function Page() {
                                         <div className="relative bg-[#101622] rounded border border-[#2a374f] p-2 flex items-center gap-2 flex-1">
                                             <span className="material-symbols-outlined text-slate-500 text-[18px]">link</span>
                                             <input 
+                                                aria-label={isA ? 'URL for Account A' : 'URL for Account B'}
+                                                title={isA ? 'URL for Account A' : 'URL for Account B'}
+                                                placeholder="Enter site URL (e.g. qq188.com)"
                                                 className="bg-transparent border-none text-slate-300 text-xs w-full p-0 focus:outline-none font-mono" 
                                                 value={isA ? config.urlA : config.urlB} 
-                                                onChange={e => setConfig({ ...config, [isA ? 'urlA' : 'urlB']: e.target.value })} 
-                                                placeholder="Enter site URL (e.g. qq188.com)"
+                                                onChange={e => {
+                                                    const newVal = e.target.value;
+                                                    setConfig({ ...config, [isA ? 'urlA' : 'urlB']: newVal });
+                                                    try {
+                                                        const accKey = isA ? 'A' : 'B';
+                                                        const payloadKey = isA ? 'urlA' : 'urlB';
+                                                        // debounce the emit to avoid flooding socket
+                                                        if (urlEmitTimers.current[accKey]) clearTimeout(urlEmitTimers.current[accKey]);
+                                                        urlEmitTimers.current[accKey] = setTimeout(() => {
+                                                            try { emit('command', { type: 'UPDATE_CONFIG', payload: { [payloadKey]: newVal } }); }
+                                                            catch (err) { console.warn('UPDATE_CONFIG emit failed', err); }
+                                                            finally { urlEmitTimers.current[accKey] = null; }
+                                                        }, URL_DEBOUNCE_MS);
+                                                    } catch (err) {
+                                                        console.warn('UPDATE_CONFIG debounce failed', err);
+                                                    }
+                                                }} 
                                             />
                                         </div>
                                     </div>
