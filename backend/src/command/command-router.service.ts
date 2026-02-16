@@ -17,19 +17,6 @@ export class CommandRouterService {
 
   async route(cmd: CommandPayload) {
     if (!cmd || !cmd.type) return
-    // Early diagnostic for toggle flow: record account, target URL and FSM state
-    try {
-      if (cmd.type === 'TOGGLE_ACCOUNT') {
-        const fs = require('fs')
-        const path = require('path')
-        const wireLog = path.join(process.cwd(), 'logs', 'wire_debug.log')
-        const account = cmd.payload?.account ?? cmd.payload?.payload?.account ?? cmd.originAccount ?? null
-        const targetUrl = cmd.payload?.url ?? cmd.payload?.payload?.url ?? cmd.payload?.targetUrl ?? cmd.payload?.payload?.targetUrl ?? null
-        const fsm = (cmd as any).fsmState ?? cmd.payload?.fsmState ?? cmd.payload?.payload?.fsmState ?? null
-        fs.appendFileSync(wireLog, JSON.stringify({ ts: Date.now(), event: 'CMD_ROUTER_TOGGLE_DIAG', account, targetUrl, fsm }) + '\n')
-        this.logger.log(`CMD_ROUTER_TOGGLE_DIAG account=${account} url=${String(targetUrl).substring(0,200)} fsm=${fsm}`)
-      }
-    } catch (e) { /* non-fatal */ }
     // Prevent router re-entry: if route is already processing, block re-entry
     if ((this as any).__routing) {
       this.logger.error(`Router re-entry detected for command: ${cmd.type} - blocking to prevent recursive routing`)

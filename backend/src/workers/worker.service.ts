@@ -267,6 +267,7 @@ export class WorkerService implements OnModuleInit {
     /** Handle toggle with atomic FSM transitions */
     private async handleToggleFsm(account: string, active: boolean): Promise<void> {
         const currentState = this.internalFsm.get(account);
+
         // 🛡️ FSM: Reject operations during transitional states
         if (currentState === ToggleState.STARTING || currentState === ToggleState.STOPPING) {
             console.log(`[FSM] 🚫 TOGGLE ${active ? 'ON' : 'OFF'} REJECTED for Account ${account} - In transitional state: ${currentState}`);
@@ -285,27 +286,13 @@ export class WorkerService implements OnModuleInit {
         }
 
         if (active) {
-            // TOGGLE ON: If not IDLE, perform a Hard Reset per Hukum 10 to force back to IDLE
+            // TOGGLE ON: Only allowed from IDLE state
             if (currentState !== ToggleState.IDLE) {
-                console.log(`[FSM] ⚠️ TOGGLE ON detected non-IDLE state for Account ${account} - performing HARD RESET from ${currentState} -> IDLE`);
-                const payload = { account, reason: 'HARD_RESET', fromState: currentState, toState: ToggleState.IDLE, ts: Date.now() };
-                try {
-                    this.gateway.sendUpdate('system_log', { level: 'warn', message: `[HARD_RESET] Forcing ${account} state ${currentState} -> IDLE before TOGGLE ON`, timestamp: Date.now() });
-                } catch (e) {}
-                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'HARD_RESET', payload }) + '\n'); } catch (e) {}
-                // Force state to IDLE so the normal ON flow can proceed
-                try { await this.transitionFsm(account, ToggleState.IDLE); } catch (e) { /* continue even if transition fails */ }
-            }
-
-            // Contract validation check (Hukum 11): log persisted provider_contracts row
-            try {
-                const contract = this.sqliteService.getProviderContractForAccount(account as any);
-                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'PROVIDER_CONTRACT_CHECK', account, contract: contract ? contract : null }) + '\n'); } catch (e) {}
-                if (!contract) {
-                    this.gateway.sendUpdate('system_log', { level: 'error', message: `[CONTRACT] Missing provider_contract for account ${account}`, timestamp: Date.now() });
-                }
-            } catch (e) {
-                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'PROVIDER_CONTRACT_CHECK_ERROR', account, error: (e && (e as Error).message) || String(e) }) + '\n'); } catch (ee) {}
+                console.log(`[FSM] 🚫 TOGGLE ON REJECTED for Account ${account} - Invalid state: ${currentState}`);
+                const payload = { account, reason: 'INVALID_STATE_FOR_ON', state: currentState, ts: Date.now() };
+                try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
+                try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
+                return;
             }
 
             // Check readiness before starting
@@ -362,28 +349,6 @@ export class WorkerService implements OnModuleInit {
                 throw error;
             }
         }
-    }
-
-    /** Wait up to `timeoutMs` for the account config URL to be populated. Polls every `intervalMs`. */
-    private async waitForConfigUrl(account: string, timeoutMs = 3000, intervalMs = 200): Promise<string | null> {
-        const start = Date.now();
-        const key = account === 'A' ? 'urlA' : 'urlB';
-        while (Date.now() - start < timeoutMs) {
-            try {
-                // Prefer authoritative accountContexts.url when available
-                try {
-                    const ctx = (this.accountContexts as any).get && (this.accountContexts as any).get(account);
-                    if (ctx && ctx.url && String(ctx.url).trim().length > 0) return String(ctx.url).trim();
-                } catch (e) { /* ignore */ }
-
-                // Fallback to runtime config cache
-                const cfg = this.config as any;
-                if (cfg && cfg[key] && String(cfg[key]).trim().length > 0) return String(cfg[key]).trim();
-            } catch (e) { /* swallow */ }
-
-            await new Promise(r => setTimeout(r, intervalMs));
-        }
-        return null;
     }
 
     /** Atomic FSM state transition */
@@ -571,102 +536,27 @@ export class WorkerService implements OnModuleInit {
                 // If enabling an account and a Whitelabel URL is configured, request
                 // the BrowserAutomationService to open/focus the provider tab first.
                 if (enabled) {
-                    let targetUrl = accountId === 'A' ? this.config.urlA : this.config.urlB;
+                    const targetUrl = accountId === 'A' ? this.config.urlA : this.config.urlB;
 
-                    // Server-side safety (Option B): if URL missing, wait up to 3s for client to persist config
+                    // Hardening B: validate whitelabel URL is configured before proceeding
                     if (!targetUrl || targetUrl.trim().length === 0) {
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'WAIT_FOR_CONFIG_URL_START', account: accountId }) + '\n'); } catch (e) {}
-                        const detected = await this.waitForConfigUrl(accountId, 3000, 200);
-                        if (detected) {
-                            targetUrl = detected;
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'WAIT_FOR_CONFIG_URL_DETECTED', account: accountId, url: detected }) + '\n'); } catch (e) {}
-                        } else {
-                            const message = `Whitelabel URL not configured for account ${accountId}. Please set it in Configuration.`;
-                            const payload = { account: accountId, reason: 'MISSING_WHITELABEL_URL', message, ts: Date.now() };
-                            console.warn(`[WORKER] 🔒 TOGGLE ON rejected for ${accountId} - missing whitelabel URL`);
-                            try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
-                            try { this.gateway.sendUpdate('system_log', { level: 'error', message, timestamp: Date.now() }); } catch (e) {}
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
-                            return;
-                        }
-                    }
-
-                    // Once URL is available, immediately perform PROVIDER_CONTRACT_CHECK per Hukum 5
-                    try {
-                        const contract = this.sqliteService.getProviderContractForAccount(accountId as any);
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'PROVIDER_CONTRACT_CHECK', account: accountId, contract: contract ? contract : null }) + '\n'); } catch (e) {}
-                        if (!contract) {
-                            this.gateway.sendUpdate('system_log', { level: 'error', message: `[CONTRACT] Missing provider_contract for account ${accountId}`, timestamp: Date.now() });
-                        }
-                    } catch (e) {
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'PROVIDER_CONTRACT_CHECK_ERROR', account: accountId, error: (e && (e as Error).message) || String(e) }) + '\n'); } catch (ee) {}
+                        const payload = { account: accountId, reason: 'MISSING_WHITELABEL_URL', ts: Date.now() };
+                        console.warn(`[WORKER] 🔒 TOGGLE ON rejected for ${accountId} - missing whitelabel URL`);
+                        try { this.gateway.sendUpdate('toggle:failed', payload); } catch (e) {}
+                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (e) {}
+                        return;
                     }
 
                     const requestId = `toggle-open-${accountId}-${Date.now()}`;
 
-                    // Prefer direct backend-managed launch/attach: attempt to attach to the
-                    // Chrome debug port for this account (will spawn Chrome via ChromeLauncher
-                    // if it's not already running) and open a tab to the target URL.
-                    // This avoids requiring the operator to manually start chrome.exe.
-                    try {
-                        const port = (require('../managers/chrome-connection.manager').ChromeConnectionManager).portFor(accountId as any);
+                    // Request browser open — allow internal bus failures to bubble to the router
+                    this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
+                    this.lastOpenedAccount = accountId;
+                    this.lastOpenedTime = Date.now();
+                    this.gateway.sendUpdate('system_log', { level: 'info', message: `[WORKER] Requested browser open for ${accountId} -> ${targetUrl}`, timestamp: Date.now() });
+                    try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'REQUEST_OPEN_BROWSER_SENT', account: accountId, url: targetUrl, requestId }) + '\n'); } catch (e) {}
 
-                        // Attempt attach (idempotent). ChromeLauncher.ensureRunning is invoked
-                        // by ChromeConnectionManager.attach(), which will spawn Chrome when needed.
-                        try {
-                            // Diagnostic: log before attempting attach so we know the call was reached
-                            console.log(`[WORKER-DEBUG] calling chromeManager.attach port=${port} account=${accountId}`);
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'WORKER_DEBUG_PRE_ATTACH', account: accountId, port }) + '\n'); } catch (e) {}
-                            const info = await this.chromeManager.attach(port);
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'CHROME_ATTACH_RESULT', account: accountId, port, info }) + '\n'); } catch (e) {}
-                            // If attach reached CONNECTED state, mark Chrome ready locally.
-                            if (info && info.state === 'CONNECTED') {
-                                this.setChromeReady(true);
-                            }
-                        } catch (attachErr) {
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'CHROME_ATTACH_FAILED', account: accountId, port, error: String(attachErr) }) + '\n'); } catch (e) {}
-                        }
-
-                        // If attach reached CONNECTED, try to open a tab directly
-                        try {
-                            const portInfo = this.chromeManager.getInfoForAccount(accountId as any);
-                                if (portInfo && portInfo.state === 'CONNECTED') {
-                                // Diagnostic: log before attempting openTab
-                                console.log(`[WORKER-DEBUG] calling chromeManager.openTab port=${portInfo.port} account=${accountId} url=${targetUrl}`);
-                                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'WORKER_DEBUG_PRE_OPENTAB', account: accountId, port: portInfo.port, url: targetUrl }) + '\n'); } catch (e) {}
-                                // Open a new tab to the target URL (HTTP/new or CDP fallback)
-                                const tab = await this.chromeManager.openTab(portInfo.port, targetUrl);
-                                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'CHROME_OPEN_TAB', account: accountId, port: portInfo.port, tab: tab ? (typeof tab === 'object' ? JSON.stringify(tab).substring(0,500) : String(tab)) : null }) + '\n'); } catch (e) {}
-                                this.lastOpenedAccount = accountId;
-                                this.lastOpenedTime = Date.now();
-                                this.gateway.sendUpdate('system_log', { level: 'info', message: `[WORKER] Launched Chrome and opened tab for ${accountId} -> ${targetUrl} (port ${portInfo.port})`, timestamp: Date.now() });
-                            } else {
-                                // Not connected yet — fall back to internalBus request which may be
-                                // handled by other automation layers (backwards compatible).
-                                this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
-                                this.lastOpenedAccount = accountId;
-                                this.lastOpenedTime = Date.now();
-                                this.gateway.sendUpdate('system_log', { level: 'info', message: `[WORKER] Requested browser open for ${accountId} -> ${targetUrl}`, timestamp: Date.now() });
-                                try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'REQUEST_OPEN_BROWSER_SENT', account: accountId, url: targetUrl, requestId }) + '\n'); } catch (e) {}
-                            }
-                        } catch (openErr) {
-                            try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'CHROME_OPEN_TAB_FAILED', account: accountId, error: String(openErr) }) + '\n'); } catch (e) {}
-                            // fallback: publish request for other automation to pick up
-                            this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
-                            this.lastOpenedAccount = accountId;
-                            this.lastOpenedTime = Date.now();
-                            this.gateway.sendUpdate('system_log', { level: 'warn', message: `[WORKER] Failed to open tab directly for ${accountId}, falling back to REQUEST_OPEN_BROWSER`, timestamp: Date.now() });
-                        }
-                    } catch (e) {
-                        // Non-fatal: if any unexpected error occurs, fall back to existing flow
-                        try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'TOGGLE_OPEN_ERROR', account: accountId, error: String(e) }) + '\n'); } catch (ee) {}
-                        this.internalBus.publish('REQUEST_OPEN_BROWSER', { account: accountId, url: targetUrl, requestId });
-                        this.lastOpenedAccount = accountId;
-                        this.lastOpenedTime = Date.now();
-                        this.gateway.sendUpdate('system_log', { level: 'warn', message: `[WORKER] Fallback requested browser open for ${accountId} -> ${targetUrl}`, timestamp: Date.now() });
-                    }
-
-                    // After attempting to launch/attach/open tab, wait for an explicit browser-open acknowledgement emitted by BrowserAutomationService
+                    // First: wait for an explicit browser-open acknowledgement emitted by BrowserAutomationService
                     try {
                         const opened = await this.waitForBrowserOpen(accountId, { timeoutMs: 2000, retries: 2, retryDelayMs: 500 });
                         try { fs.appendFileSync(this.wireLog, JSON.stringify({ ts: Date.now(), event: 'BROWSER_OPEN_RESULT', account: accountId, opened }) + '\n'); } catch (e) {}
@@ -681,8 +571,12 @@ export class WorkerService implements OnModuleInit {
                         const payload = { account: accountId, reason: 'BROWSER_OPEN_WAIT_ERROR', error: (e && (e as Error).message) || String(e), ts: Date.now() };
                         try { this.gateway.sendUpdate('toggle:failed', payload); } catch (err) {}
                         try { fs.appendFileSync(this.wireLog, JSON.stringify({ event: 'TOGGLE_FAILED', payload }) + '\n'); } catch (err) {}
+
+                        // Also emit a system_log immediately (guaranteed observable in CI)
                         try { this.gateway.sendUpdate('system_log', { level: 'error', message: `[TOGGLE] waitForBrowserOpen error: ${(e && (e as Error).message) ? (e as Error).message : String(e)}`, timestamp: Date.now() }); } catch (err2) {}
+
                         console.log('[TOGGLE_HANDLER] rethrowing waitForBrowserOpen error');
+                        // Propagate unexpected errors so the router reports handler failure
                         throw e;
                     }
 
@@ -773,24 +667,7 @@ export class WorkerService implements OnModuleInit {
 
         registerHandler('GET_STATUS', async () => { this.broadcastStatus(); })
 
-        registerHandler('UPDATE_CONFIG', async (data) => {
-            // Merge incoming payload into runtime config
-            this.config = { ...this.config, ...data.payload };
-            try { await this.redisService.setConfig(this.config) } catch (e){}
-
-            // Persist whitelabel urls into AccountContext so accountContexts.url is available
-            try {
-                const ctxA = (this.accountContexts as any).get && (this.accountContexts as any).get('A');
-                const ctxB = (this.accountContexts as any).get && (this.accountContexts as any).get('B');
-                if (ctxA) ctxA.url = this.config.urlA || '';
-                if (ctxB) ctxB.url = this.config.urlB || '';
-            } catch (e) {
-                // non-fatal
-            }
-
-            // Broadcast updated status to all clients
-            this.broadcastStatus();
-        })
+        registerHandler('UPDATE_CONFIG', async (data) => { this.config = { ...this.config, ...data.payload }; try { await this.redisService.setConfig(this.config) } catch (e){}; this.broadcastStatus(); })
 
         // MARK_PROVIDER: persist provider contract (SQLite) and attach to AccountContext
         registerHandler('MARK_PROVIDER', async (data) => {

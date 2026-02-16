@@ -1,34 +1,15 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import Redis from 'ioredis';
-import dns from 'dns';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
     private client: Redis;
     private configCache: any = null;
 
-    async onModuleInit() {
-        // Prefer container service name for Redis when available; if it cannot be
-        // resolved fall back to localhost so the runtime remains usable in dev.
-        let candidateHost = process.env.REDIS_HOST || 'redis-service';
-        const port = parseInt(process.env.REDIS_PORT || '6379');
-
-        try {
-            await (dns.promises.lookup(candidateHost));
-        } catch (e) {
-            // DNS lookup failed — try localhost fallback
-            console.warn('[REDIS] DNS lookup failed for', candidateHost, 'falling back to 127.0.0.1');
-            candidateHost = '127.0.0.1';
-        }
-
+    onModuleInit() {
         this.client = new Redis({
-            host: candidateHost,
-            port,
-        });
-
-        // Prevent ioredis unhandled 'error' events from crashing the process in dev.
-        this.client.on('error', (err) => {
-            console.warn('[REDIS] client error (non-fatal):', err && err.message ? err.message : String(err));
+            host: process.env.REDIS_HOST || '127.0.0.1',
+            port: parseInt(process.env.REDIS_PORT || '6379'),
         });
     }
 

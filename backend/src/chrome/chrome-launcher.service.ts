@@ -76,31 +76,19 @@ export class ChromeLauncher {
     private async _ensureRunning(port: number): Promise<LaunchResult> {
         // CI / test safe-mode: do NOT spawn or probe real Chrome in CI/test environments.
         // This makes the runtime deterministic for CI and unit tests that run with NODE_ENV=test.
-        const __IS_CI = process.env.CI === 'true';
+        const IS_CI = process.env.CI === 'true';
         const IS_TEST = process.env.NODE_ENV === 'test';
         const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
         // In production strict mode, mock mode is forbidden
-        if (IS_PRODUCTION && (__IS_CI || IS_TEST)) {
+        if (IS_PRODUCTION && (IS_CI || IS_TEST)) {
             const msg = 'Production strict mode forbids CI/TEST mock mode';
             this.logger.error(msg);
             try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'PROD_STRICT_MOCK_FORBIDDEN', port, message: msg }) + '\n'); } catch (e) {}
             return { launched: false, reused: false, port, message: msg };
         }
 
-        // If running in CI/TEST, prefer to detect a host bridge first: many dev setups
-        // start Chrome on the host (Windows) and expose it to Docker via
-        // host.docker.internal. If that endpoint is responsive we should reuse it
-        // instead of returning a CI mock. Only if no host bridge exists do we keep
-        // CI/TEST mock behavior.
-        if (__IS_CI || IS_TEST) {
-            const hostResponsive = await this.isHostResponsive(port);
-            if (hostResponsive) {
-                this.logger.log(`[CHROME_LAUNCH_DETECT] CI/TEST but host.docker.internal responsive on port ${port} — reusing host Chrome`);
-                try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_DETECT', port, host: 'host.docker.internal' }) + '\n'); } catch (e) {}
-                return { launched: false, reused: true, port, message: 'Host bridge responsive (host.docker.internal)' };
-            }
-
+        if (IS_CI || IS_TEST) {
             this.logger.log(`[CHROME_LAUNCH_MOCK] CI/TEST mode — simulating Chrome on port ${port}`);
             try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_MOCK', port }) + '\n'); } catch (e) {}
             return { launched: true, reused: false, port, message: 'CI/TEST mocked chrome' };
@@ -114,39 +102,12 @@ export class ChromeLauncher {
             return { launched: false, reused: true, port, message: 'Chrome already running' };
         }
 
-        // 2. Resolve binary / Host-probe override
-        // If not running in CI, prefer to probe the host bridge first (host.docker.internal)
-        // and fall back to the Docker gateway (172.17.0.1). The intent: the Chrome
-        // binary is expected to live on the host, not inside the container. Do not
-        // emit a "Chrome binary not found" error when running in non-CI dev mode.
-        if (!__IS_CI) {
-            const hostResponsive = await this.isHostResponsive(port);
-            if (hostResponsive) {
-                this.logger.log(`[CHROME_LAUNCH_DETECT] Non-CI: host.docker.internal responsive on port ${port} — reusing host Chrome`);
-                try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_DETECT_HOST', port, host: 'host.docker.internal' }) + '\n'); } catch (e) {}
-                return { launched: false, reused: true, port, message: 'Host bridge responsive (host.docker.internal)' };
-            }
-
-            const gatewayResponsive = await this.isGatewayResponsive(port);
-            if (gatewayResponsive) {
-                this.logger.log(`[CHROME_LAUNCH_DETECT] Non-CI: gateway 172.17.0.1 responsive on port ${port} — reusing host Chrome`);
-                try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_DETECT_HOST', port, host: '172.17.0.1' }) + '\n'); } catch (e) {}
-                return { launched: false, reused: true, port, message: 'Host bridge responsive (172.17.0.1)' };
-            }
-
-            this.logger.log(`[CHROME_LAUNCH_PROBE] Non-CI: host and gateway probes failed for port ${port}; continuing to normal launch/resolution`);
-            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_LAUNCH_PROBE_FAIL', port }) + '\n'); } catch (e) {}
-        }
-
-        // Normal resolve & spawn path (used in CI or when host probes didn't find a bridge)
+        // 2. Resolve binary
         const binary = this.resolveBinary();
         if (!binary) {
-            // In non-CI mode prefer not to spam an error about a missing binary —
-            // upstream callers expect host-provided Chrome. Emit a diagnostic but
-            // avoid the prior hard error message.
-            const msg = 'No local Chrome binary found; host probes did not respond';
-            this.logger.warn(msg);
-            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_NOT_FOUND_BYPASS', port, message: msg }) + '\n'); } catch (e) {}
+            const msg = 'Chrome binary not found on this machine';
+            this.logger.error(msg);
+            try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'CHROME_NOT_FOUND', port, message: msg }) + '\n'); } catch (e) {}
             return { launched: false, reused: false, port, message: msg };
         }
 
@@ -203,52 +164,6 @@ export class ChromeLauncher {
     private async isPortResponsive(port: number): Promise<boolean> {
         try {
             const res = await fetch(`http://localhost:${port}/json/version`, {
-                signal: AbortSignal.timeout(2000),
-            });
-            return res.ok;
-        } catch {
-            return false;
-        }
-    }
-
-    /** Check host.docker.internal for responsive CDP (useful when Chrome runs on the Windows host). */
-    private async isHostResponsive(port: number): Promise<boolean> {
-        try {
-            // When probing port 9223 we must set a Host header — use native http request so header is honored.
-            if (port === 9223) {
-                try {
-                    const http = require('http');
-                    const opts: any = { method: 'HEAD', host: 'host.docker.internal', port, path: '/json/version', headers: { Host: 'localhost:9223' }, timeout: 2000 };
-                    const result = await new Promise<boolean>((resolve) => {
-                        const req = http.request(opts, (res: any) => resolve(res.statusCode >= 200 && res.statusCode < 400));
-                        req.on('error', () => resolve(false));
-                        req.on('timeout', () => { try { req.destroy(); } catch (e) {} resolve(false); });
-                        req.end();
-                    });
-
-                    // Emit immediate diagnostic so runtime logs show the exact probe outcome.
-                    try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'HOST_PROBE_9223', port, result }) + '\n'); } catch (e) { /* swallow */ }
-                    this.logger.debug(`[HOST_PROBE] host.docker.internal:9223 -> ${result}`);
-                    return result;
-                } catch (e) {
-                    try { fs.appendFileSync(path.join(process.cwd(), 'wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'HOST_PROBE_9223', port, result: false, error: String(e) }) + '\n'); } catch (err) { /* swallow */ }
-                    return false;
-                }
-            }
-
-            const res = await fetch(`http://host.docker.internal:${port}/json/version`, {
-                signal: AbortSignal.timeout(2000),
-            });
-            return res.ok;
-        } catch {
-            return false;
-        }
-    }
-
-    /** Check Docker gateway IP (172.17.0.1) for responsive CDP as a fallback. */
-    private async isGatewayResponsive(port: number): Promise<boolean> {
-        try {
-            const res = await fetch(`http://172.17.0.1:${port}/json/version`, {
                 signal: AbortSignal.timeout(2000),
             });
             return res.ok;

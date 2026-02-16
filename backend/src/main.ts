@@ -6,8 +6,6 @@ import axios from 'axios';
 
 async function bootstrap() {
     try {
-        // Enforce CI=false in runtime to allow real HTTP probes (Hukum 12)
-        if (process.env.CI !== 'false') process.env.CI = 'false';
         // Expose CI/test flags for early diagnostics
         const IS_CI = process.env.CI === 'true';
         const IS_TEST = process.env.NODE_ENV === 'test';
