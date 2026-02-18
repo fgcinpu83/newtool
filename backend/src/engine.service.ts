@@ -31,43 +31,74 @@ export class EngineService {
     if (enabled) return this.toggleOn(accountId);
     return this.toggleOff(accountId);
   }
+  private setState(accountId: 'A' | 'B', next: WorkerState) {
+    const acc = this.accounts[accountId];
+    const prev = acc.state;
+    acc.state = next;
+    this.logger.log(`[STATE] ${accountId}: ${prev} -> ${next}`);
+  }
 
   async toggleOn(accountId: 'A' | 'B') {
     const acc = this.accounts[accountId];
 
-    console.log('[ENGINE] toggleOn called for', accountId);
+    this.logger.log(`[FLOW] Toggle ON requested for ${accountId}`);
     this.logger.log(`toggleOn called for ${accountId}, current state=${acc.state}, url=${acc.url}`);
 
-    if (acc.state !== 'IDLE') return;
+    if (acc.state !== 'IDLE') {
+      this.logger.log(`[FLOW] Toggle ON aborted for ${accountId} - not IDLE (state=${acc.state})`);
+      throw new Error('INVALID_STATE');
+    }
 
-    if (!acc.url) throw new Error('URL_NOT_SET');
+    if (!acc.url) {
+      this.logger.log(`[FLOW] Toggle ON failed for ${accountId} - URL_NOT_SET`);
+      throw new Error('URL_NOT_SET');
+    }
 
+    this.setState(accountId, 'BROWSER_OPENING');
 
-    acc.state = 'BROWSER_OPENING';
-
-    console.log('[ENGINE] calling openBrowser for', accountId, acc.url);
+    this.logger.log(`[FLOW] calling openBrowser for ${accountId} ${acc.url}`);
     const session = await this.browser.openBrowser(accountId, acc.url);
-
-    this.logger.log(`openBrowser returned for ${accountId}: ${session ? 'OK' : 'NULL'}`);
+    this.logger.log(`[FLOW] openBrowser result for ${accountId}: ${session ? 'OK' : 'NULL'}`);
 
     if (!session) {
-      acc.state = 'IDLE';
-      return;
+      this.logger.log(`[FLOW] openBrowser failed for ${accountId}`);
+      // revert state
+      this.setState(accountId, 'IDLE');
+      throw new Error('OPEN_BROWSER_FAILED');
     }
 
     acc.browserSession = session;
-    acc.state = 'BROWSER_READY';
+    if (!acc.browserSession) {
+      this.logger.log(`[FLOW] Browser session missing after open for ${accountId}`);
+      this.setState(accountId, 'IDLE');
+      throw new Error('BROWSER_SESSION_MISSING');
+    }
+
+    this.setState(accountId, 'BROWSER_READY');
+    this.logger.log(`[FLOW] Browser opened successfully for ${accountId}`);
+
+    return true;
   }
 
   async toggleOff(accountId: 'A' | 'B') {
     const acc = this.accounts[accountId];
 
-    if (acc.state === 'IDLE') return;
+    this.logger.log(`[FLOW] Toggle OFF requested for ${accountId}, current state=${acc.state}`);
 
-    acc.state = 'STOPPING';
+    if (acc.state === 'IDLE') {
+      this.logger.log(`[FLOW] Toggle OFF ignored for ${accountId} - already IDLE`);
+      return true;
+    }
+
+    this.setState(accountId, 'STOPPING');
 
     if (acc.browserSession) {
-      await this.browser.closeBrowser(accountId);
+      try {
+        await this.browser.closeBrowser(accountId);
+        this.logger.log(`[FLOW] closeBrowser called for ${accountId}`);
+      } catch (err: any) {
+        this.logger.error(`[FLOW] closeBrowser error for ${accountId}: ${err && err.message ? err.message : err}`);
+      }
     }
 
     this.accounts[accountId] = {
@@ -77,17 +108,24 @@ export class EngineService {
       providerMarked: false,
       streamActive: false
     };
+
+    this.logger.log(`[FLOW] Toggle OFF completed for ${accountId}`);
+    return true;
   }
 
   setUrl(accountId: 'A' | 'B', url: string) {
-    this.accounts[accountId].url = url;
+    const acc = this.accounts[accountId];
+    const prev = acc.url;
+    acc.url = url;
+    this.logger.log(`[FLOW] setUrl ${accountId}: ${prev} -> ${url}`);
   }
 
   providerMarked(accountId: 'A' | 'B') {
     const acc = this.accounts[accountId];
     if (acc.state === 'BROWSER_READY') {
       acc.providerMarked = true;
-      acc.state = 'PROVIDER_READY';
+      this.setState(accountId, 'PROVIDER_READY');
+      this.logger.log(`[FLOW] providerMarked for ${accountId}`);
     }
   }
 
@@ -95,7 +133,8 @@ export class EngineService {
     const acc = this.accounts[accountId];
     if (acc.state === 'PROVIDER_READY') {
       acc.streamActive = true;
-      acc.state = 'RUNNING';
+      this.setState(accountId, 'RUNNING');
+      this.logger.log(`[FLOW] streamDetected for ${accountId}`);
     }
   }
 
