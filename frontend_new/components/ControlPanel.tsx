@@ -1,7 +1,7 @@
 'use client'
 
 import { BackendState } from '../types'
-import { sendCommand } from '../websocket/client'
+import { toggleAccount } from '../websocket/client'
 
 export default function ControlPanel({ state }: { state: BackendState }) {
   return (
@@ -13,7 +13,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
             <div className="text-sm font-medium text-slate-300">Primary (Account A)</div>
             <button
               disabled={state.fsm.state !== 'IDLE'}
-              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'A', active: true })}
+              onClick={async () => await toggleAccount('A', true)}
               className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'IDLE'
                   ? 'bg-primary hover:bg-primary/90 text-black'
@@ -25,7 +25,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
 
             <button
               disabled={state.fsm.state !== 'RUNNING'}
-              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'A', active: false })}
+              onClick={async () => await toggleAccount('A', false)}
               className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'RUNNING'
                   ? 'bg-danger hover:bg-danger/90 text-white'
@@ -40,7 +40,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
             <div className="text-sm font-medium text-slate-300">Secondary (Account B)</div>
             <button
               disabled={state.fsm.state !== 'IDLE'}
-              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'B', active: true })}
+              onClick={async () => await toggleAccount('B', true)}
               className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'IDLE'
                   ? 'bg-primary hover:bg-primary/90 text-black'
@@ -52,7 +52,7 @@ export default function ControlPanel({ state }: { state: BackendState }) {
 
             <button
               disabled={state.fsm.state !== 'RUNNING'}
-              onClick={() => sendCommand('TOGGLE_ACCOUNT', { account: 'B', active: false })}
+              onClick={async () => await toggleAccount('B', false)}
               className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
                 state.fsm.state === 'RUNNING'
                   ? 'bg-danger hover:bg-danger/90 text-white'

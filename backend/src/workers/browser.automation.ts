@@ -11,13 +11,22 @@
  */
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AppGateway } from '../gateway.module';
-import { RedisService } from '../shared/redis.service';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
-import { CommandRouterService } from '../command/command-router.service';
-import { InternalEventBusService } from '../events/internal-event-bus.service';
+
+// Per-account browser session container
+interface BrowserSession {
+    accountId: string;
+    port: number;
+    url?: string;
+    targetId?: string;
+    wsUrl?: string;
+    client?: any;
+    cleanup(): Promise<void> | void;
+}
 
 @Injectable()
 export class BrowserAutomationService implements OnModuleInit {
@@ -28,21 +37,177 @@ export class BrowserAutomationService implements OnModuleInit {
     private accountUrls = new Map<string, string>();
 
     // Per-account browser session isolation
-    private sessions = new Map<string, { port: number; tabTitle?: string; url?: string }>();
+    private sessions = new Map<string, BrowserSession>();
 
     // Debounce
     private lastLaunchTime = new Map<string, number>();
     private processedRequests = new Set<string>();
 
+    private gateway?: AppGateway;
+
+    private internalBus?: any;
+
     constructor(
-        private gateway: AppGateway,
-        private redis: RedisService,
+        private moduleRef: ModuleRef,
         private chromeManager: ChromeConnectionManager,
-        private commandRouter: CommandRouterService,
-        private internalBus: InternalEventBusService,
     ) {}
 
+    // Helper to create an empty session object
+    private createSession(accountId: string, port: number, url?: string): BrowserSession {
+        const s: BrowserSession = {
+            accountId,
+            port,
+            url,
+            targetId: undefined,
+            wsUrl: undefined,
+            client: undefined,
+            async cleanup() {
+                try {
+                    if (this.client && typeof this.client.close === 'function') {
+                        await this.client.close();
+                    }
+                } catch (e) { /* ignore */ }
+                this.client = undefined;
+                this.targetId = undefined;
+                this.wsUrl = undefined;
+            }
+        };
+        return s;
+    }
+
+    // Ensure browser session exists for account. Will NOT create duplicate sessions.
+    private async ensureBrowser(account: string, url: string, requestId?: string) {
+        this.logger.log(`[BROWSER][${account}] OPEN_ATTEMPT`);
+        if (!account) throw new Error('account required');
+
+        // Guard against double open — if session exists, attempt navigation but don't create new session
+        if (this.sessions.has(account)) {
+            this.logger.log(`[BROWSER][${account}] Session exists - skipping create, attempting navigation`);
+            // attempt to navigate/focus existing session
+            const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
+            const result = await this.openUrlViaManager(account, port, url);
+            // publish events as usual but do not create session
+            if (result.success) {
+                this.gateway.sendUpdate('browser:opened', { account, url, action: result.action, tabTitle: result.tabTitle, timestamp: Date.now() });
+            }
+            return;
+        }
+
+        // Create new session
+        const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
+        const attachInfo = await this.chromeManager.attach(port);
+        if (attachInfo.state !== 'CONNECTED') {
+            this.gateway.sendUpdate('browser:error', { account, error: `Chrome ${attachInfo.state} on port ${port}` });
+            throw new Error(`Chrome not connected on port ${port}`);
+        }
+
+        // Open or focus tab
+        const result = await this.openUrlViaManager(account, port, url);
+        if (!result.success) {
+            this.gateway.sendUpdate('browser:error', { account, error: result.error });
+            throw new Error(result.error || 'open failed');
+        }
+
+        // Create session container
+        const session = this.createSession(account, port, url);
+        // attempt to discover targetId/wsUrl from tabs
+        try {
+            const tabs = await this.chromeManager.getTabs(port);
+            const match = tabs.find(t => (url && t.url.includes(url)) || t.title === result.tabTitle);
+            if (match) {
+                session.targetId = (match.id as any) || undefined;
+                session.wsUrl = match.webSocketDebuggerUrl;
+            }
+        } catch (e) { /* ignore */ }
+
+        // Try to create persistent CDP client if possible
+        try {
+            const CDP = require('chrome-remote-interface');
+            if (typeof CDP === 'function') {
+                const opts: any = { port };
+                if (session.targetId) opts.target = session.targetId;
+                if (session.wsUrl) opts.target = session.wsUrl;
+                const client = await CDP(opts);
+                session.client = client;
+            }
+        } catch (e) { /* optional */ }
+
+        this.sessions.set(account, session);
+        this.logger.log(`[BROWSER][${account}] SESSION_CREATED`);
+
+        // Publish opened event with accountId
+        this.gateway.sendUpdate('browser:opened', { account, url, action: result.action, tabTitle: result.tabTitle, timestamp: Date.now() });
+        try { this.internalBus && typeof this.internalBus.publish === 'function' && this.internalBus.publish('BROWSER_OPENED', { account, url, action: result.action, tabTitle: result.tabTitle }); } catch (e) {}
+        this.gateway.sendUpdate('EXECUTE_AUTOMATION', { account, url });
+    }
+
+    // Simplified API: open a real Chrome tab via /json/new and return session or null
+    public async openBrowser(account: string, url: string): Promise<{ port: number; targetId: string; url: string } | null> {
+        if (!account || !url) return null;
+        try {
+            const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
+            this.logger.log(`[BROWSER][${account}] OPEN_ATTEMPT port=${port} url=${url}`);
+
+            // Ensure Chrome is running on port
+            const attachInfo = await this.chromeManager.attach(port);
+            this.logger.log(`[BROWSER][${account}] attach state=${attachInfo.state}`);
+            if (attachInfo.state !== 'CONNECTED') {
+                this.logger.warn(`[BROWSER][${account}] Chrome not connected on port ${port}`);
+                return null;
+            }
+
+            // Call /json/new to open a new tab
+            const encoded = encodeURIComponent(url.startsWith('http') ? url : `https://${url}`);
+            const endpoint = `http://localhost:${port}/json/new?${encoded}`;
+            const res = await fetch(endpoint, { method: 'PUT' });
+            if (!res.ok) {
+                this.logger.warn(`[BROWSER][${account}] /json/new responded ${res.status}`);
+                return null;
+            }
+            const data = await res.json();
+
+            const targetId = data && (data.targetId || data.id || (data['id'] && data['id'].toString()));
+            if (!targetId) {
+                this.logger.warn(`[BROWSER][${account}] /json/new did not return targetId: ${JSON.stringify(data)}`);
+                return null;
+            }
+
+            // create and store session container
+            const session = this.createSession(account, port, url);
+            session.targetId = targetId;
+            session.wsUrl = data.webSocketDebuggerUrl || data.webSocketUrl || undefined;
+            this.sessions.set(account, session);
+
+            // Deterministic log
+            console.log(`[BROWSER][${account}] OPENED ${url} on port ${port}`);
+
+            return { port, targetId, url };
+        } catch (e) {
+            this.logger.error(`[BROWSER][${account}] openBrowser failed`, e as any);
+            return null;
+        }
+    }
+
+    // Close and clean session for account
+    public async closeBrowser(account?: string) {
+        if (!account) return;
+        const session = this.sessions.get(account);
+        if (!session) return;
+        if (session.accountId !== account) throw new Error('session.accountId mismatch');
+
+        this.logger.log(`[BROWSER][${account}] SESSION_CLEANING`);
+        try { await session.cleanup(); } catch (e) {}
+        // delegate actual tab close to extension/manager via gateway
+        this.gateway.sendUpdate('browser:close', { account });
+        this.gateway.sendUpdate('browser:closed', { account, timestamp: Date.now() });
+        this.sessions.delete(account);
+        this.logger.log(`[BROWSER][${account}] SESSION_CLEANED`);
+    }
+
     async onModuleInit() {
+        // Resolve gateway lazily to avoid circular DI issues
+        try { this.gateway = this.moduleRef.get(AppGateway, { strict: false }); } catch (e) { /* ignore */ }
+
         this.logger.log(`BrowserAutomationService v5.0 CONSTITUTION MODE (ID: ${this.instanceId})`);
 
         // Check Chrome connection on startup via manager
@@ -57,39 +222,43 @@ export class BrowserAutomationService implements OnModuleInit {
             this.logger.log(`[OBSERVE] Chrome connection unavailable on port 9222 - state: ${infoA.state}`);
         }
 
-        // Register as owner for browser-level commands (external only)
-        this.commandRouter.register('BROWSER_CMD', async (c) => {
-            try {
-                // Pass-through to extension via gateway
-                this.gateway.sendUpdate('browser:command', c.payload);
-            } catch (e) { this.logger.error('BROWSER_CMD failed', e) }
-        });
+        // Attempt to resolve legacy CommandRouterService if present (optional)
+        try {
+            const cmdRouter = this.moduleRef.get('CommandRouterService' as any, { strict: false }) as any;
+            if (cmdRouter && typeof cmdRouter.register === 'function') {
+                try {
+                    cmdRouter.register('BROWSER_CMD', async (c: any) => {
+                        try { this.gateway.sendUpdate('browser:command', c.payload); } catch (e) { this.logger.error('BROWSER_CMD failed', e) }
+                    });
+                    cmdRouter.register('OPEN_BROWSER', async (c: any) => { await this.handleBrowserStart(c.payload || {}); });
+                    cmdRouter.register('FOCUS_TAB', async (c: any) => { await this.focusTab(c.payload || {}); });
+                    cmdRouter.register('CLOSE_BROWSER', async (c: any) => { await this.handleBrowserStop(c.payload?.account); });
+                    cmdRouter.register('CHECK_CHROME', async (c: any) => { await this.reportChromeStatus(); });
+                } catch (e) { /* ignore registration failures */ }
+            }
+        } catch (e) { /* optional */ }
 
-        this.commandRouter.register('OPEN_BROWSER', async (c) => {
-            await this.handleBrowserStart(c.payload || {});
-        });
-
-        this.commandRouter.register('FOCUS_TAB', async (c) => { await this.focusTab(c.payload || {}); });
-        this.commandRouter.register('CLOSE_BROWSER', async (c) => { await this.handleBrowserStop(c.payload?.account); });
-        this.commandRouter.register('CHECK_CHROME', async (c) => { await this.reportChromeStatus(); });
+        // Resolve InternalEventBusService lazily (avoid DI cycle)
+        try { this.internalBus = this.moduleRef.get('InternalEventBusService' as any, { strict: false }); } catch (e) { /* ignore */ }
 
         // Internal event subscriptions (WorkerService -> BrowserAutomationService)
-        this.internalBus.on('REQUEST_BROWSER_CMD', (payload: any) => {
+        try { this.internalBus && this.internalBus.on && this.internalBus.on('REQUEST_BROWSER_CMD', (payload: any) => {
             try {
                 this.logger.log(`Handling internal REQUEST_BROWSER_CMD: ${JSON.stringify(payload)}`);
                 this.gateway.sendUpdate('browser:command', payload);
             } catch (e) { this.logger.error('Internal REQUEST_BROWSER_CMD failed', e as any) }
-        });
+        }); } catch(e) { /* ignore */ }
 
-        this.internalBus.on('REQUEST_OPEN_BROWSER', (payload: any) => {
+        try { this.internalBus && this.internalBus.on && this.internalBus.on('REQUEST_OPEN_BROWSER', (payload: any) => {
             try {
+                try { console.log('[DEBUG] BrowserAutomation received REQUEST_OPEN_BROWSER for', payload && payload.account); } catch (e) {}
                 this.handleBrowserStart(payload || {});
             } catch (e) { this.logger.error('Internal REQUEST_OPEN_BROWSER failed', e as any) }
-        });
+        }); } catch(e) { /* ignore */ }
 
-        this.internalBus.on('REQUEST_CLOSE_BROWSER', (payload: any) => {
+        try { this.internalBus && this.internalBus.on && this.internalBus.on('REQUEST_CLOSE_BROWSER', (payload: any) => {
             try { this.handleBrowserStop(payload?.account); } catch (e) { this.logger.error('Internal REQUEST_CLOSE_BROWSER failed', e as any) }
-        });
+        }); } catch(e) { /* ignore */ }
     }
 
     // ─── SESSION ISOLATION HELPERS ─────────────────
@@ -100,40 +269,18 @@ export class BrowserAutomationService implements OnModuleInit {
         try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'HANDLE_BROWSER_START_CALLED', account, url: url || null, requestId: requestId || null, sessionExists: this.sessions.has(account) }) + '\n'); } catch (e) {}
         if (!account) return;
 
-        // If a session already exists for this account, attempt to navigate/focus instead of skipping
-        if (this.sessions.has(account)) {
-            this.logger.log(`[BROWSER] Session already active for ${account} - attempting navigation to ${url || this.accountUrls.get(account) || '(none)'}`);
-            try {
-                await this.openBrowserTab({ account, url: url || this.accountUrls.get(account) || '', requestId });
-            } catch (e) {
-                this.logger.error(`[BROWSER] Navigation attempt for existing session ${account} failed`, e as any);
-            }
-            return;
-        }
-
-        // Use existing openBrowserTab logic for opening/focusing
+        // Delegate to ensureBrowser which handles creation or navigation safely
         try {
-            await this.openBrowserTab({ account, url: url || this.accountUrls.get(account) || '', requestId });
-            // openBrowserTab will emit browser:opened on success; capture url and mark session
-            const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
-            this.sessions.set(account, { port, url: url || this.accountUrls.get(account) });
-            this.logger.log(`[BROWSER] Session created for ${account} on port ${port}`);
+            await this.ensureBrowser(account, url || this.accountUrls.get(account) || '', requestId);
         } catch (e) {
-            this.logger.error(`[BROWSER] Failed to start session for ${account}`, e as any);
+            this.logger.error(`[BROWSER][${account}] OPEN_FAILED`, e as any);
         }
     }
 
     /** Stop and dispose session for account */
     private async handleBrowserStop(account?: string) {
         if (!account) return;
-        const session = this.sessions.get(account);
-        if (!session) return;
-
-        this.logger.log(`[BROWSER] Stopping session for ${account}`);
-        // delegate actual tab close to extension/manager via gateway
-        this.gateway.sendUpdate('browser:close', { account });
-        this.gateway.sendUpdate('browser:closed', { account, timestamp: Date.now() });
-        this.sessions.delete(account);
+        await this.closeBrowser(account);
     }
 
     // ─── COMMAND ROUTER ─────────────────────────────
@@ -185,37 +332,17 @@ export class BrowserAutomationService implements OnModuleInit {
         this.logger.log(`Opening browser for Account ${account}: ${url}`);
         this.accountUrls.set(account, url);
 
-        const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
-        const result = await this.openUrlViaManager(port, url);
-        try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'OPENBROWSER_RESULT', account, url, result: { success: result.success, action: result.action || null, error: result.error || null } }) + '\n'); } catch (e) {}
-
-        if (result.success) {
-            this.logger.log(`${result.action === 'opened' ? 'Opened new tab' : 'Focused existing tab'}: ${result.tabTitle}`);
-            this.gateway.sendUpdate('browser:opened', {
-                account, url,
-                action: result.action,
-                tabTitle: result.tabTitle,
-                timestamp: Date.now(),
-            });
-            // persistent trace for open-publish
-            try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'BROWSER_OPENED_PUBLISH', account, url, action: result.action, tabTitle: result.tabTitle }) + '\n'); } catch (e) {}
-            // internal publish attempt trace
-            try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'BROWSER_INTERNAL_PUBLISH_ATTEMPT', account, url, action: result.action, tabTitle: result.tabTitle }) + '\n'); } catch (e) {}
-            // Internal notification for WorkerService / orchestration
-            try { this.internalBus.publish('BROWSER_OPENED', { account, url, action: result.action, tabTitle: result.tabTitle }); } catch (e) {}
-            this.gateway.sendUpdate('EXECUTE_AUTOMATION', { account, url });
-        } else {
-            this.logger.error(`Failed: ${result.error}`);
-            this.gateway.sendUpdate('browser:error', { account, error: result.error });
-            try { fs.appendFileSync(path.join(process.cwd(), 'logs', 'wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'BROWSER_OPEN_FAILED_PUBLISH', account, url, error: result.error }) + '\n'); } catch (e) {}
-            try { this.internalBus.publish('BROWSER_OPEN_FAILED', { account, error: result.error }); } catch (e) {}
-            // ChromeLauncher.ensureRunning() is called inside attach() — no fallback needed
+        try {
+            await this.ensureBrowser(account, url, requestId);
+        } catch (e) {
+            this.logger.error(`[BROWSER][${account}] OPEN_FAILED`, e as any);
+            this.gateway.sendUpdate('browser:error', { account, error: (e && (e as Error).message) || String(e) });
         }
     }
 
     // ─── ALL CHROME ACCESS VIA MANAGER ──────────────
 
-    private async openUrlViaManager(port: number, url: string): Promise<{
+    private async openUrlViaManager(account: string, port: number, url: string): Promise<{
         success: boolean;
         action: 'opened' | 'focused' | 'failed';
         tabTitle?: string;
@@ -228,6 +355,9 @@ export class BrowserAutomationService implements OnModuleInit {
         }
 
         // Step 2: Check for existing tab with same domain
+        // Use account-specific whitelist for fallback matching
+        const whitelist = this.accountUrls.get(account) || url;
+
         let domain = url;
         try { domain = new URL(url.startsWith('http') ? url : `https://${url}`).hostname; } catch {}
 
@@ -235,8 +365,10 @@ export class BrowserAutomationService implements OnModuleInit {
         const existing = tabs.find(tab => {
             try {
                 const tabDomain = new URL(tab.url).hostname;
-                return tabDomain === domain || tabDomain.endsWith(`.${domain}`);
-            } catch { return tab.url.includes(url); }
+                // only consider tabs that match the account-specific whitelist
+                const matchesWhitelist = whitelist ? tab.url.includes(whitelist) : true;
+                return matchesWhitelist && (tabDomain === domain || tabDomain.endsWith(`.${domain}`));
+            } catch { return whitelist ? tab.url.includes(whitelist) : tab.url.includes(url); }
         });
 
         if (existing) {
@@ -263,6 +395,10 @@ export class BrowserAutomationService implements OnModuleInit {
             this.gateway.sendUpdate('browser:error', { account, error: `No URL registered for account ${account}` });
             return;
         }
+
+        // If we have a session, assert it matches account
+        const session = this.sessions.get(account);
+        if (session && session.accountId !== account) throw new Error('session.accountId mismatch');
 
         const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
         if (!this.chromeManager.isConnected(port)) {
@@ -297,8 +433,8 @@ export class BrowserAutomationService implements OnModuleInit {
 
     private async closeBrowserTabs(payload: { account: string }) {
         const { account } = payload;
-        this.logger.log(`Closing tabs for Account ${account}`);
-        this.gateway.sendUpdate('browser:close', { account });
-        this.gateway.sendUpdate('browser:closed', { account, timestamp: Date.now() });
+        if (!account) return;
+        this.logger.log(`[BROWSER][${account}] CLOSE_ATTEMPT`);
+        await this.closeBrowser(account);
     }
 }

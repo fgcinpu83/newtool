@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { BackendState } from '../types'
-import { sendCommand } from '../websocket/client'
+import { toggleAccount, setUrl } from '../websocket/client'
 
  export default function AccountPanel({ account, state }: { account: 'A' | 'B', state: BackendState }) {
    const isA = account === 'A'
@@ -23,10 +23,10 @@ import { sendCommand } from '../websocket/client'
       if (typeof backendVal === 'boolean') setEnabled(backendVal)
     }, [backendVal])
 
-    const handleClick = () => {
+    const handleClick = async () => {
       try {
-        // send canonical per-account toggle to backend
-        sendCommand('TOGGLE_ACCOUNT', { account: acc, active: !enabled })
+        await toggleAccount(acc as 'A' | 'B', !enabled)
+        // optimistic local flip while backend-state refresh will correct if needed
         setEnabled(!enabled)
       } catch (err) {
         console.error('[AccountToggle] handleClick error', err)
@@ -87,7 +87,16 @@ import { sendCommand } from '../websocket/client'
 
         <div className="relative bg-background-dark rounded border border-border-dark p-2 flex items-center gap-2 mt-3">
           <span className="material-symbols-outlined text-slate-500 text-[18px]">link</span>
-          <input aria-label="Whitelabel URL" defaultValue="" className="bg-transparent border-none text-slate-300 text-xs w-full p-0 focus:ring-0 placeholder-slate-600 font-mono tracking-wide" placeholder="Whitelabel URL..." type="text" />
+          <div className="flex gap-2">
+            <input aria-label="Whitelabel URL" defaultValue="" id={`wl-${account}`} className="bg-transparent border-none text-slate-300 text-xs w-full p-0 focus:ring-0 placeholder-slate-600 font-mono tracking-wide" placeholder="Whitelabel URL..." type="text" />
+            <button className="text-xs px-2 py-1 bg-primary/10 rounded" onClick={async () => {
+              const el = document.getElementById(`wl-${account}`) as HTMLInputElement | null
+              if (!el) return
+              const v = el.value.trim()
+              if (!v) return
+              try { await setUrl(account, v) } catch (e) { console.error(e) }
+            }}>Set</button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mt-3">

@@ -9,8 +9,10 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Socket } from 'socket.io';
-import { ProviderSessionManager } from './managers/provider-session.manager';
-import { CommandRouterService } from './command/command-router.service';
+import { EngineService } from './engine.service';
+import { BrowserAutomationService } from './workers/browser.automation';
+import { ChromeConnectionManager } from './managers/chrome-connection.manager';
+import { ChromeLauncher } from './chrome/chrome-launcher.service';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnApplicationBootstrap {
@@ -25,36 +27,20 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
     // 🛡️ CDP ISOLATION: Track recent injected events to prevent duplication
     private recentInjectedEvents: Record<string, number> = {};
 
-    constructor(private providerManager: ProviderSessionManager, private commandRouter: CommandRouterService) { }
+    constructor(private engine: EngineService) { }
 
     onModuleInit() {
         console.log('Gateway initialized');
         
-        // Check for system readiness every 2 seconds
-        const readinessCheck = setInterval(() => {
-            if (this.providerManager.isSystemReady()) {
-                console.log('[SYSTEM] BACKEND READY - Providers active on both accounts');
-                this.server.emit('system:ready', {
-                    status: 'ready',
-                    ts: Date.now(),
-                    systemStatus: this.providerManager.getSystemStatus()
-                });
-                clearInterval(readinessCheck);
-            }
-        }, 2000);
-        
-        // Fallback timeout after 30 seconds
+        // Minimal readiness: report ready with engine state
         setTimeout(() => {
-            if (!this.providerManager.isSystemReady()) {
-                console.log('[SYSTEM] BACKEND READY - Timeout reached (providers may not be ready)');
-                this.server.emit('system:ready', {
-                    status: 'ready',
-                    ts: Date.now(),
-                    systemStatus: this.providerManager.getSystemStatus()
-                });
-                clearInterval(readinessCheck);
-            }
-        }, 30000);
+            console.log('[SYSTEM] BACKEND READY - minimal mode');
+            this.server && this.server.emit && this.server.emit('system:ready', {
+                status: 'ready',
+                ts: Date.now(),
+                systemStatus: this.engine.getState()
+            });
+        }, 1000);
 
         // --- Wire log tailer: stream new wire_debug.log lines to frontend 'system_log' (Activity Log)
         try {
@@ -204,7 +190,6 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
         }, null, 2)}`, 'background:#2196f3;color:#fff;font-weight:bold');
 
         this.trafficBus.emit('stream_data', actualData);
-        this.commandEvents.emit('endpoint_captured', actualData); // 🛡️ Legacy compatibility
     }
 
     @SubscribeMessage('ping')
@@ -215,18 +200,54 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
     // Receive generic commands from frontend and forward to internal listeners
     @SubscribeMessage('command')
-    handleCommand(@MessageBody() data: any, @ConnectedSocket() client: any) {
+    async handleCommand(@MessageBody() data: any, @ConnectedSocket() client: any) {
         // normalize payload shape
         const cmd = data && data.type ? data : (data && data.command ? { type: data.command, payload: data.payload } : null)
         if (!cmd) return;
-        console.log(`[GATEWAY] ← command: ${cmd.type}`);
+        try { console.log(`[GATEWAY] ← command: ${cmd.type} origin=${cmd.originAccount || 'unknown'} payload=${JSON.stringify(cmd.payload || {})}`); } catch (e) { console.log(`[GATEWAY] ← command: ${cmd.type}`); }
         // Attach client identity if present
         if (client && (client as any).gravityAccount) cmd.originAccount = (client as any).gravityAccount
-        // Route to CommandRouterService (business logic lives there)
+        // Directly handle a small set of commands and call EngineService
         try {
-            this.commandRouter.route(cmd)
+            const t = (cmd.type || '').toUpperCase();
+            if (t === 'SET_URL') {
+                const acc = (String(cmd.payload?.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
+                const url = String(cmd.payload?.url || '');
+                this.engine.setUrl(acc as 'A'|'B', url);
+                this.sendUpdate('state', this.engine.getState());
+                return;
+            }
+
+            if (t === 'TOGGLE' || t === 'TOGGLE_ACCOUNT') {
+                const acc = (String(cmd.payload?.account || cmd.payload?.accountId || 'A').toUpperCase() === 'B') ? 'B' : 'A';
+                const enabled = Boolean(cmd.payload?.enabled ?? cmd.payload?.active);
+                await this.engine.toggle(acc as 'A'|'B', enabled);
+                this.sendUpdate('state', this.engine.getState());
+                return;
+            }
+
+            if (t === 'PROVIDER_MARKED') {
+                const acc = (String(cmd.payload?.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
+                this.engine.providerMarked(acc as 'A'|'B');
+                this.sendUpdate('state', this.engine.getState());
+                return;
+            }
+
+            if (t === 'STREAM_DATA') {
+                const acc = (String(cmd.payload?.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
+                this.engine.streamDetected(acc as 'A'|'B');
+                this.sendUpdate('state', this.engine.getState());
+                return;
+            }
+
+            if (t === 'GET_STATE') {
+                this.sendUpdate('state', this.engine.getState());
+                return;
+            }
+
+            // unknown commands are ignored by the simplified gateway
         } catch (e) { 
-            console.error('[GATEWAY] Command routing failed', e)
+            console.error('[GATEWAY] Command handling failed', e)
             try { const fs = require('fs'); const p = require('path'); fs.appendFileSync(p.join(process.cwd(),'logs','wire_debug.log'), JSON.stringify({ ts: Date.now(), event: 'GATEWAY_COMMAND_ERROR', command: cmd && cmd.type, error: e && e.message ? e.message : String(e) }) + '\n'); } catch(err){}
         }
     }
@@ -245,7 +266,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
 @Module({
     imports: [],
-    providers: [AppGateway, CommandRouterService],
-    exports: [AppGateway, CommandRouterService]
+    providers: [AppGateway, EngineService, BrowserAutomationService, ChromeLauncher, ChromeConnectionManager],
+    exports: [AppGateway, EngineService, BrowserAutomationService]
 })
 export class GatewayModule { }

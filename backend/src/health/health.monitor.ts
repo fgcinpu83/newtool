@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AppGateway } from '../gateway.module';
 import { DiscoveryService } from '../discovery/discovery.service';
@@ -54,12 +54,37 @@ export class HealthMonitorService implements OnModuleInit {
 
     constructor(
         private gateway: AppGateway,
-        private discovery: DiscoveryService,
-        private pairing: PairingService,
-        private worker: WorkerService,
-        private market: MarketService,
-        private guardian: ProviderGuardianService
+        @Optional() private discovery: DiscoveryService,
+        @Optional() private pairing: PairingService,
+        @Optional() private worker: WorkerService,
+        @Optional() private market: MarketService,
+        @Optional() private guardian: ProviderGuardianService
     ) { }
+
+    private getDiscoveryStats() {
+        if (this.discovery && typeof this.discovery.getStats === 'function') return this.discovery.getStats();
+        return { registryASize: 0, registryBSize: 0, confirmedPairs: 0 } as any;
+    }
+
+    private getPairingStats() {
+        if (this.pairing && typeof this.pairing.getStats === 'function') return this.pairing.getStats();
+        return { totalBufferedEvents: 0, activePairs: 0, arbOpportunities: 0, totalPairs: 0 } as any;
+    }
+
+    private getMarketStats() {
+        if (this.market && typeof this.market.getStats === 'function') return this.market.getStats();
+        return { totalNormalized: 0 } as any;
+    }
+
+    private getGuardianStatus() {
+        if (this.guardian && typeof this.guardian.getAllStatus === 'function') return this.guardian.getAllStatus();
+        return new Map();
+    }
+
+    private getWorkerProviderStatuses() {
+        if (this.worker && typeof this.worker.getAllProviderStatuses === 'function') return this.worker.getAllProviderStatuses();
+        return [] as any[];
+    }
 
     @Cron(CronExpression.EVERY_5_SECONDS)
     handleHealthCheck() {
@@ -88,8 +113,8 @@ export class HealthMonitorService implements OnModuleInit {
         // [STABILITY-REPORT] 
         // providersLive: X providerLastSeen: {...} events: Y bindings: Z registryA: A registryB: B healthState: GREEN
 
-        const providerStatus = this.worker.getAllProviderStatuses();
-        const discoveryStats = this.discovery.getStats();
+        const providerStatus = this.getWorkerProviderStatuses();
+        const discoveryStats = this.getDiscoveryStats();
 
         const bornCount = (this.worker as any).getBornCount?.() || 0;
         const msg = `[STABILITY-REPORT] health=${health.status} reason=${health.reason} ` +
@@ -112,8 +137,8 @@ export class HealthMonitorService implements OnModuleInit {
     private enterPairingAuditMode() {
         this.logger.log('[CONTROL] === PAIRING AUDIT MODE ===');
 
-        const discoveryStats = this.discovery.getStats();
-        const pairingStats = this.pairing.getStats();
+        const discoveryStats = this.getDiscoveryStats();
+        const pairingStats = this.getPairingStats();
 
         this.logger.log(`[AUDIT] Registry A: ${discoveryStats.registryASize}`);
         this.logger.log(`[AUDIT] Registry B: ${discoveryStats.registryBSize}`);
@@ -139,10 +164,10 @@ export class HealthMonitorService implements OnModuleInit {
 
     private evaluateRawHealth(): SystemHealth {
         // 1. ENGINE SOURCES (SOURCE OF TRUTH)
-        const guardianStatus = this.guardian.getAllStatus();
-        const discoveryStats = this.discovery.getStats();
-        const pairingStats = this.pairing.getStats();
-        const marketStats = this.market.getStats();
+        const guardianStatus = this.getGuardianStatus();
+        const discoveryStats = this.getDiscoveryStats();
+        const pairingStats = this.getPairingStats();
+        const marketStats = this.getMarketStats();
 
         // 2. PROVIDER LIVENESS CHECK (Guardian)
         let hasDeadProvider = false;

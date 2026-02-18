@@ -1,203 +1,34 @@
-# 🦅 ANTIGRAVITY v3.2 — DESKTOP BROWSER EDITION
+# Minimal Stable Arbitrage Engine
 
-**Deterministic Multi-Account Arbitrage Engine**  
-Single-Tab Isolation | Provider Contract System | CI-Safe Architecture
+This repository is refactored to a Minimal Stable Engine architecture for a 2-account arbitrage system.
 
----
+Goals
+- Deterministic, user-driven flows for accounts A and B.
+- Simple, explicit state transitions. No internal token guards, retries, or event-driven FSMs.
 
-## 🎯 SYSTEM OBJECTIVE
+Architecture
+- `WorkerService`: single orchestrator; holds `accounts` state for `A` and `B`.
+- `BrowserAutomationService`: executor with two simple APIs: `openBrowser(account,url)` and `closeBrowser(account)`.
+- `Extension`: marks provider via `PROVIDER_MARKED` event.
+- `Stream detection`: first stream packet transitions account to `RUNNING`.
 
-Build a deterministic desktop arbitrage system that:
+State Flow
 
-- Captures provider odds via Chrome Extension (passive interception)
-- Isolates each betting account in its own Chrome profile + tab
-- Enforces strict provider contract filtering
-- Runs arbitrage only when both providers are ACTIVE
-- Never crashes under CI or runtime instability
+IDLE → BROWSER_OPENING → BROWSER_READY → PROVIDER_READY → RUNNING → STOPPING → IDLE
 
-This system prioritizes:
-- Isolation
-- Determinism
-- Fail-Safe behavior
-- Test stability
+User Workflow
+- Set `urlA` / `urlB` via config
+- Toggle ON (worker opens browser for account)
+- Login & mark provider via extension (sends `PROVIDER_MARKED`)
+- When first stream packet arrives, account state becomes `RUNNING`
+- Toggle OFF closes browser and resets account
 
----
+Principles
+- Simplicity over complexity
+- Deterministic transitions only
+- No automatic retries or hidden fallback logic
 
-# 🏗️ CURRENT ARCHITECTURE (PHASE 1 COMPLETE)
-
-## Core Principles
-
-1. **Single Tab Per Account**
-2. **Dedicated Chrome Profile Per Account**
-3. **Strict FSM Per Account**
-4. **Provider Contract Required Before Processing**
-5. **No Hardcoded Whitelabel URLs**
-6. **CI Safe Mode (No Real Chrome in CI)**
-
----
-
-# 🧠 Account Isolation Model
-
-Each account has its own runtime context:
-
-AccountContext {
-accountId: 'A' | 'B'
-url
-chromeProfilePath
-cdpConnection
-fsmState
-providerContract
-providerStatus (RED | YELLOW | GREEN)
-oddsStreamActive
-lastTrafficAt
-}
-
-
-No shared state between A and B.
-
----
-
-# 🔄 Account FSM
-
-IDLE
-→ STARTING
-→ WAIT_PROVIDER
-→ ACTIVE
-→ STOPPING
-→ IDLE
-
-
-Rules:
-
-- Toggle ON does NOT start arbitrage engine.
-- Provider must be marked first.
-- Toggle OFF performs full hard reset.
-
----
-
-# 🧾 Provider Contract System
-
-Provider contract is:
-
-- User-marked from extension popup
-- Persisted in SQLite (`provider_contracts`)
-- Bound to specific AccountContext
-- Used for strict traffic filtering
-
-Only traffic matching:
-
-endpointPattern
-method
-requestSchema
-responseSchema
-
-
-is processed.
-
-No contract → no odds processing.
-
----
-
-# 🟢 Provider Status Lifecycle
-
-GREEN:
-- Valid traffic flowing
-- Contract exists
-- Parsing success
-
-YELLOW:
-- No valid traffic for 5s
-
-RED:
-- No contract
-- CDP disconnected
-- FSM not ACTIVE
-
----
-
-# 🚀 Arbitrage Engine Gating
-
-Engine can RUN only when:
-
-- Account A providerStatus = GREEN
-- Account B providerStatus = GREEN
-- Engine state = RUNNING
-
-Engine does not auto-start on Toggle ON.
-
----
-
-# 🧪 CI SAFE MODE (CRITICAL)
-
-When:
-
-process.env.CI === true
-OR
-NODE_ENV === 'test'
-
-
-System behavior changes:
-
-- No real Chrome spawn
-- No real CDP attach
-- All Chrome/CDP operations mocked
-- No process.exit(1)
-- All errors emit `system_log` only
-
-This guarantees deterministic CI.
-
----
-
-# 💾 Persistence Layer
-
-SQLite:
-- provider_contracts
-- execution_history
-
-Redis:
-- Optional performance cache layer
-- Not required for system boot
-
----
-
-# 🖥️ Admin Panel
-
-Admin UI allows:
-
-- List provider contracts
-- Delete provider contracts
-- View execution history (DB)
-- Refresh persisted state
-
-Frontend contains no business logic.
-
----
-
-# 🔒 Constitution Rules (Enforced)
-
-- No global mutable state
-- No synthetic fallback IDs
-- No provider logic in UI
-- No multi-tab per account
-- No hardcoded provider URLs
-- No Chrome spawn in CI mode
-- No unhandled promise rejections
-
----
-
-# 🧪 Smoke Validation Checklist
-
-Toggle ON:
-- Chrome opens single tab
-- FSM → WAIT_PROVIDER
-
-Mark Provider:
-- Contract saved in DB
-- providerStatus → GREEN when traffic flows
-
-Toggle OFF:
-- Tab closed
-- CDP detached
+See `backend/src/workers/worker.service.ts` and `backend/src/workers/browser.automation.ts` for implementation.
 
 ---
 

@@ -1,203 +1,36 @@
-ARBITRAGE SYSTEM MASTER CONTEXT — E:\NEWTOOL
-
-Version: 3.3
-Status: ENFORCED
-Authority Level: ABSOLUTE
-Scope: Desktop Browser Edition — Single Instance Deterministic Engine
-
-1️⃣ SYSTEM PURPOSE
-
-Build a deterministic, isolation-enforced, production-safe desktop arbitrage engine with:
-
-Strict Account Isolation
-
-Single Tab per Account
-
-Provider Contract Filtering
-
-Atomic Dual-Leg Execution
-
-Automatic Hedge Protocol
-
-Exposure Cap Enforcement
-
-Mandatory Execution Audit Trail
-
-CI Safe Mode Stability
-
-No architectural drift allowed.
-
-2️⃣ NON-NEGOTIABLE CONSTITUTION
-
-The system MUST:
-
-Maintain strict AccountContext isolation.
-
-Allow only one active Chrome tab per account.
-
-Require provider contract before processing traffic.
-
-Enforce atomic arbitrage execution.
-
-Trigger hedge protocol on partial failure.
-
-Enforce exposure limits before execution.
-
-Write audit record before any betting occurs.
-
-Prevent duplicate execution of same match.
-
-Never crash runtime process.
-
-Mock Chrome/CDP in CI/test mode.
-
-Avoid global mutable state outside controlled context.
-
-Never generate synthetic fallback event IDs.
-
-Violation of any rule = architecture breach.
-
-3️⃣ ACCOUNT ISOLATION MODEL
-
-Each account owns:
-
-AccountContext {
-	accountId
-	chromeProfilePath
-	cdpConnection
-	fsmState
-	providerContract
-	providerStatus
-	oddsStreamActive
-	lastTrafficAt
-	exposureTracker
-}
-
-
-Cross-account contamination is forbidden.
-
-No shared parser cache.
-No shared execution state.
-
-4️⃣ FSM LAW
-
-Valid transitions only:
-
-IDLE
-→ STARTING
-→ WAIT_PROVIDER
-→ ACTIVE
-→ STOPPING
-→ IDLE
-
-
-Invalid transitions must be rejected.
-
-FSM must never remain stuck in STARTING.
-
-5️⃣ PROVIDER CONTRACT LAW
-
-Must be user-marked.
-
-Must be persisted in SQLite.
-
-Must match endpointPattern.
-
-Only one active contract per account (Phase 1).
-
-Traffic not matching contract must be ignored.
-
-No hardcoded URLs allowed.
-
-6️⃣ ATOMIC EXECUTION LAW (NEW)
-
-Execution must follow:
-
-Acquire execution lock (per match).
-
-Write audit row to DB.
-
-Validate exposure limits.
-
-Execute Leg A.
-
-Execute Leg B only if Leg A succeeded.
-
-Trigger hedge if Leg B fails or times out.
-
-Update audit record.
-
-Release lock.
-
-Partial execution without hedge = forbidden.
-
-7️⃣ HEDGE PROTOCOL LAW
-
-If:
-
-Leg A success
-
-Leg B failure/timeout
-
-System must:
-
-executeHedge()
-persist hedge_event
-update audit row
-
-
-Hedge protocol must never be skipped.
-
-8️⃣ EXPOSURE CONTROL LAW
-
-System must enforce:
-
-MAX_EXPOSURE_PER_MATCH
-MAX_TOTAL_EXPOSURE
-
-
-Before execution.
-
-Exposure tracking is per-account.
-
-If exposure exceeded:
-Execution rejected.
-
-CI/test mode may bypass exposure check.
-
-9️⃣ EXECUTION AUDIT LAW
-
-No execution allowed without audit persistence.
-
-SQLite tables:
-
-execution_audit_log
-
-hedge_events
-
-provider_contracts
-
-Audit row must exist BEFORE execution begins.
-
-Audit row must be updated AFTER execution completes.
-
-🔟 DOUBLE-RUN PROTECTION
-
-System must prevent:
-
-Same match executing concurrently.
-
-Duplicate execution of same opportunity.
-
-Per-match execution lock required.
-
-1️⃣1️⃣ ENGINE WATCHDOG LAW
-
-Production mode only:
-
-Every 5 seconds:
-
-Detect stale execution locks
+Minimal Stable Engine — Master Context
+
+Version: 1.0
+Scope: Minimal Stable Arbitrage Engine (2 accounts)
+
+System Philosophy
+- Simplicity > Complexity
+- Deterministic, explicit transitions only
+- User-driven actions (no automatic retries or hidden guards)
+
+Core Components
+- `WorkerService`: single orchestrator holding `accounts` runtime state for `A` and `B`.
+- `BrowserAutomationService`: executor with two APIs: `openBrowser(account,url)` and `closeBrowser(account)`.
+- `Extension`: performs provider marking via `PROVIDER_MARKED(accountId)`.
+- `Stream detection`: first stream packet advances account to `RUNNING`.
+
+AccountRuntime
+- `accountId`: 'A' | 'B'
+- `state`: one of `IDLE | BROWSER_OPENING | BROWSER_READY | PROVIDER_READY | RUNNING | STOPPING`
+- `url`: configured whitelabel URL or null
+- `browserSession`: opaque session object or null
+- `providerMarked`: boolean
+- `streamActive`: boolean
+
+Operational Rules
+- Toggle ON: direct call to `BrowserAutomationService.openBrowser`; no retries, no event token.
+- Provider must be explicitly marked by extension (`PROVIDER_MARKED`).
+- First stream packet moves account to `RUNNING` and starts observer.
+- Toggle OFF: direct close via `BrowserAutomationService.closeBrowser` and reset runtime state.
+
+No automatic recovery, no internal token-based FSM, and no complex event orchestration.
+
+After refactor: build, start backend, test workflow for each account manually.
 
 Detect execution timeout violation
 

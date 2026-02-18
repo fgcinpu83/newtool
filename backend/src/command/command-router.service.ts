@@ -17,6 +17,7 @@ export class CommandRouterService {
 
   async route(cmd: CommandPayload) {
     if (!cmd || !cmd.type) return
+    try { console.log(`[ROUTER] ← route: ${cmd.type} origin=${cmd.originAccount || 'unknown'} payload=${JSON.stringify(cmd.payload || {})}`); } catch(e) { console.log(`[ROUTER] ← route: ${cmd.type}`) }
     // Prevent router re-entry: if route is already processing, block re-entry
     if ((this as any).__routing) {
       this.logger.error(`Router re-entry detected for command: ${cmd.type} - blocking to prevent recursive routing`)
@@ -29,6 +30,7 @@ export class CommandRouterService {
     }
     try {
       this.logger.log(`Routing command: ${cmd.type}`);
+      try { console.log(`[ROUTER] → invoke handler for: ${cmd.type}`); } catch(e){}
       (this as any).__routing = true;
       const res = await handler(cmd);
       (this as any).__routing = false;

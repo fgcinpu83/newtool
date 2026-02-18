@@ -24,6 +24,8 @@ function getSocket(): Socket {
   return window.__NEWTOOL_SOCKET__ as Socket
 }
 
+let onStateCallback: MessageHandler | null = null
+
 export function connect(onState: MessageHandler) {
   if (typeof window === 'undefined') return
   const s = getSocket()
@@ -46,6 +48,7 @@ export function connect(onState: MessageHandler) {
   s.on('backend_state', (data: unknown) => {
     try {
       onState(data as BackendState)
+      onStateCallback = onState
     } catch (e) {
       // swallow - keep UI stable
     }
@@ -77,5 +80,39 @@ export function sendCommand(command: string, payload?: unknown) {
   const s = window.__NEWTOOL_SOCKET__
   if (!s || !s.connected) return
   s.emit('command', { type: command, payload })
+}
+
+export async function toggleAccount(accountId: 'A' | 'B', enabled: boolean) {
+  await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account: accountId, active: enabled })
+  })
+
+  // refresh backend snapshot and notify UI
+  try {
+    const res = await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/backend-state')
+    const state = await res.json()
+    if (onStateCallback) onStateCallback(state as BackendState)
+  } catch (e) {
+    // ignore
+  }
+}
+
+export async function setUrl(accountId: 'A' | 'B', url: string) {
+  await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/set-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account: accountId, url })
+  })
+
+  // refresh backend snapshot and notify UI
+  try {
+    const res = await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/backend-state')
+    const state = await res.json()
+    if (onStateCallback) onStateCallback(state as BackendState)
+  } catch (e) {
+    // ignore
+  }
 }
 
