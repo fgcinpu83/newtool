@@ -75,9 +75,14 @@ async function kickstart() {
         console.log('🔌 [KICKSTART] Disconnected:', reason);
     });
 
-    // Emit ping to test connection
+    // Emit client_ping to test connection (must include account)
     setTimeout(() => {
-        socket.emit('ping', Date.now());
+        const account = 'A';
+        if (!account) {
+            console.warn('client_ping blocked: account missing');
+            return;
+        }
+        socket.emit('client_ping', { ts: Date.now(), account });
     }, 500);
 }
 
