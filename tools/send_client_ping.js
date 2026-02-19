@@ -6,6 +6,8 @@ const s = io(URL, { transports: ['websocket'], reconnection: false, timeout: 500
 
 s.on('connect', () => {
   console.log('connected as', s.id);
+  // Tag socket with account so gateway can accept the ping
+  try { s.emit('endpoint_captured', { account: 'A', url: 'http://local/test', source: 'send_client_ping' }); } catch (e) { /* ignore */ }
   const payload = { ts: Date.now(), account: 'A' };
   console.log('emitting client_ping', payload);
   s.emit('client_ping', payload);

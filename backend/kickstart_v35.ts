@@ -75,13 +75,14 @@ async function kickstart() {
         console.log('🔌 [KICKSTART] Disconnected:', reason);
     });
 
-    // Emit client_ping to test connection (must include account)
+    // Tag socket as extension account first so gateway will accept ping
     setTimeout(() => {
         const account = 'A';
         if (!account) {
             console.warn('client_ping blocked: account missing');
             return;
         }
+        try { socket.emit('endpoint_captured', { account, url: 'http://local/test', source: 'kickstart' }); } catch (e) { /* ignore */ }
         socket.emit('client_ping', { ts: Date.now(), account });
     }, 500);
 }
