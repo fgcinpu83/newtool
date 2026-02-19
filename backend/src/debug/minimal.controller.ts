@@ -44,4 +44,43 @@ export class MinimalDebugController {
       return { success: false, error: err && err.message ? err.message : String(err) };
     }
   }
+
+  @Post('simulate-bind')
+  simulateBind(@Body() body: { account: string; targetId?: string }): any {
+    const acc = (String(body.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
+    const targetId = String(body.targetId || `SIM-${Math.random().toString(36).slice(2,10).toUpperCase()}`);
+    // Force a browserSession into EngineService for test purposes
+    try {
+      const state = (this.engine as any).getState();
+      (state[acc] as any).browserSession = { port: 9222, targetId, url: (state[acc] as any).url || null };
+      // Replace internal accounts map so summaries reflect binding
+      (this.engine as any).accounts = state;
+      return { success: true, state: JSON.parse(JSON.stringify((this.engine as any).getState())) };
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  }
+
+  @Post('simulate-provider-marked')
+  simulateProviderMarked(@Body() body: { account: string }): any {
+    const acc = (String(body.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
+    try {
+      this.engine.providerMarked(acc as 'A' | 'B');
+      return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+    } catch (e: any) {
+      return { success: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  @Post('simulate-stream')
+  simulateStream(@Body() body: { account: string; targetId?: string; rate?: number }): any {
+    const acc = (String(body.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
+    const payload = { targetId: body.targetId, rate: body.rate };
+    try {
+      this.engine.streamDetected(acc as 'A' | 'B', payload as any);
+      return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+    } catch (e: any) {
+      return { success: false, error: e && e.message ? e.message : String(e) };
+    }
+  }
 }

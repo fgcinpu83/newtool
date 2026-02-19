@@ -62,7 +62,61 @@ export function useBackendState(): BackendState {
         })
       }
     } catch (e) { }
+    // Accept polling snapshots from /api/system/state and store as single `system` payload
+    const onPolled = (ev: any) => {
+      try {
+        const payload = ev && ev.detail ? ev.detail : null
+        if (!payload) return
+        setState(prev => ({ ...prev, system: payload }))
+      } catch (e) { }
+    }
+    window.addEventListener('system:polled', onPolled as any)
+
+    // Also proactively poll backend so we don't rely on event ordering between hooks
+    let mounted = true
+    const fetchSystemState = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/system/state')
+        if (!res.ok) return
+        const s = await res.json()
+        if (!mounted) return
+        setState(prev => ({ ...prev, system: s }))
+      } catch (e) {
+        // ignore
+      }
+    }
+    fetchSystemState()
+    const pollId = setInterval(fetchSystemState, 5000)
+
+    return () => { window.removeEventListener('system:polled', onPolled as any); mounted = false; clearInterval(pollId) }
   }, [])
 
   return state
+}
+
+// Poll backend authoritative system state as a fallback and primary source for UI
+// This ensures balances, pings, and execution state come from backend (step 4/5).
+export function useBackendPolling() {
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    let mounted = true
+    const fetchSystemState = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/system/state')
+        if (!res.ok) return
+        const s = await res.json()
+        // dispatch global window event so components can consume if needed
+        if (mounted) {
+          window.dispatchEvent(new CustomEvent('system:polled', { detail: s }))
+          setTick(t => t + 1)
+        }
+      } catch (e) {
+        // ignore - keep UI resilient
+      }
+    }
+    fetchSystemState()
+    const id = setInterval(fetchSystemState, 5000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [])
 }

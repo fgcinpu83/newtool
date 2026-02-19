@@ -192,10 +192,26 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
         this.trafficBus.emit('stream_data', actualData);
     }
 
-    @SubscribeMessage('ping')
-    handlePing(@ConnectedSocket() client: Socket) {
-        console.log('[GATEWAY] PING FROM CLIENT', client.id);
-        client.emit('pong', { ok: true, ts: Date.now() });
+    @SubscribeMessage('client_ping')
+    handlePing(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+        try {
+            console.log('[GATEWAY] PING FROM CLIENT', client.id);
+            // Determine ping value: prefer explicit payload.ping, otherwise compute from client-supplied ts
+            let measured: number | null = null;
+            if (data && typeof data.ping === 'number') measured = Number(data.ping);
+            else if (data && typeof data.ts === 'number') measured = Date.now() - Number(data.ts);
+
+            const acc = (client && (client as any).gravityAccount) ? (client as any).gravityAccount : null;
+            if (acc === 'A' || acc === 'B') {
+                try { this.engine.setPing(acc as 'A'|'B', measured); } catch (e) { /* ignore */ }
+                // Broadcast updated state so UI sees latest ping
+                this.sendUpdate('state', this.engine.getState());
+            }
+
+            client.emit('pong', { ok: true, ts: Date.now(), ping: measured });
+        } catch (e) {
+            console.error('[GATEWAY] handlePing failed', e);
+        }
     }
 
     // Receive generic commands from frontend and forward to internal listeners
@@ -235,7 +251,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
             if (t === 'STREAM_DATA') {
                 const acc = (String(cmd.payload?.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
-                this.engine.streamDetected(acc as 'A'|'B');
+                // pass full payload to engine for validation (targetId, rate, etc.)
+                this.engine.streamDetected(acc as 'A'|'B', cmd.payload || {});
                 this.sendUpdate('state', this.engine.getState());
                 return;
             }

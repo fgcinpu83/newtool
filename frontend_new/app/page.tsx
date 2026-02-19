@@ -7,7 +7,7 @@ import GravityBar from '../components/GravityBar'
 import ArbitrageTable from '../components/ArbitrageTable'
 import ExecutionHistory from '../components/ExecutionHistory'
 import SensorPanel from '../components/SensorPanel'
-import ErrorStream from '../components/ErrorStream'
+// System logs moved to global LogsPanel in layout; remove duplicate ErrorStream here
 import AccountPanel from '../components/AccountPanel'
 import LiveScanner from '../components/LiveScanner'
 import AdminPanel from '../components/AdminPanel'
@@ -41,7 +41,7 @@ export default function Page() {
           </div>
         </div>
 
-        <ErrorStream state={state} />
+        {/* System Logs panel unified in layout — removed duplicate ErrorStream here */}
       </div>
     </main>
   )

@@ -382,6 +382,66 @@ export default function Page() {
         return () => clearInterval(keepAliveInt);
     }, []);
 
+    // Poll backend authoritative system state and scanner every 3s
+    useEffect(() => {
+        let mounted = true
+        const fetchState = async () => {
+            try {
+                const r = await fetch('/api/system/state')
+                if (!r.ok) return
+                const s = await r.json()
+                if (!mounted) return
+                // update balances and pings
+                setSystemStatus(prev => ({
+                    ...prev,
+                    balanceA: (s.primary_balance ?? prev.balanceA).toString(),
+                    balanceB: (s.secondary_balance ?? prev.balanceB).toString(),
+                }))
+                setPingA(s.primary_ping_ms ?? null)
+                setPingB(s.secondary_ping_ms ?? null)
+                // update provider/pipeline health lights
+                if (s.primary_status && s.secondary_status) {
+                    const aLive = s.primary_status === 'CONNECTED'
+                    const bLive = s.secondary_status === 'CONNECTED'
+                    let newStatus = 'RED', reason = 'WAITING_FOR_DATA'
+                    if (aLive && bLive) { newStatus = 'GREEN'; reason = 'BOTH_PROVIDERS_LIVE' }
+                    else if (aLive || bLive) { newStatus = 'YELLOW'; reason = aLive ? 'WAITING_FOR_B' : 'WAITING_FOR_A' }
+                    // If execution is not READY, prefer YELLOW to indicate caution
+                    if (s.execution_state && s.execution_state !== 'READY') {
+                        newStatus = 'YELLOW'
+                        reason = `EXECUTION_${s.execution_state}`
+                    }
+                    setPipelineHealth(prev => ({ ...prev, status: newStatus, reason }))
+                }
+            } catch (e) {
+                console.warn('Failed to poll system state', e)
+            }
+        }
+        const fetchScanner = async () => {
+            try {
+                const r = await fetch('/api/scanner/live')
+                if (!r.ok) return
+                const d = await r.json()
+                // replace live feed buffer with authoritative scanner results if provided
+                if (mounted && Array.isArray(d.opportunities)) {
+                    // map opportunities into liveFeed schema expected by scanner table
+                    const mapped = d.opportunities.map((pair: any) => ({
+                        id: pair.pairId, timestamp: pair.lastUpdate || Date.now(), account: pair.legA?.provider || '-', bookmaker: pair.legA?.bookmaker || '-', home: pair.legA?.home || '-', away: pair.legB?.away || '-', market: pair.market, selection: pair.legA?.odds?.selection || '-', line: pair.legA?.odds?.line || '-', odds: String(pair.legA?.odds?.val || '-'), decOdds: pair.legA?.odds?.val || 0, accountB: pair.legB?.provider || '-', bookmakerB: pair.legB?.bookmaker || '-', selectionB: pair.legB?.odds?.selection || '-', marketB: pair.market, lineB: pair.legB?.odds?.line || '-', oddsB: String(pair.legB?.odds?.val || '-'), decOddsB: pair.legB?.odds?.val || 0, profit: pair.profit, state: pair.state
+                    }))
+                    // replace liveFeed with mapped results
+                    dispatchLiveFeed({ type: 'REPLACE_ALL', items: mapped })
+                }
+            } catch (e) {
+                console.warn('Failed to fetch scanner live', e)
+            }
+        }
+
+        fetchState()
+        fetchScanner()
+        const id = setInterval(() => { fetchState(); fetchScanner(); }, 5000)
+        return () => { mounted = false; clearInterval(id) }
+    }, [])
+
     // Consolidated WebSocket event handling and helper definitions.
 
     // 🛡️ v11.0: Track sent browser commands to prevent duplicates
@@ -1114,37 +1174,7 @@ export default function Page() {
                         </div>
                     </div>
 
-                    {/* FOOTER / LOGS */}
-                    <div className="flex flex-col bg-[#1a2332] border border-[#2a374f] rounded-lg shrink-0 h-48 shadow-sm overflow-hidden">
-                        <div className="flex border-b border-[#2a374f] bg-[#101622]/30">
-                            <button className="px-4 py-2 text-xs font-medium text-[#2b6cee] border-b-2 border-[#2b6cee] bg-[#1a2332]">All Logs</button>
-                            <div className="ml-auto flex items-center pr-2"><span onClick={() => setLogs([])} className="text-[10px] text-slate-500 cursor-pointer hover:text-white">Clear</span></div>
-                        </div>
-                        <div className="flex-1 overflow-auto custom-scroll p-2 bg-[#0c1017] font-mono text-[11px] leading-relaxed">
-                            {logs.map((log, i) => <div key={i} className="text-slate-400">{log}</div>)}
-                        </div>
-                        <div className="bg-[#1a2332] border-t border-[#2a374f] px-4 py-2 flex items-center justify-between shrink-0">
-                            <div className="flex items-center gap-6">
-                                {['GATEWAY', 'REDIS', 'WEBSOCKET', 'QUEUE (0)', 'WORKERS (4/4)'].map(sys => (
-                                    <div key={sys} className="flex items-center gap-2">
-                                        <span className={`size-2 rounded-full ${connected ? 'bg-[#22c55e] lamp-active' : 'bg-slate-600'}`}></span>
-                                        <span className="text-[10px] font-bold text-slate-300 tracking-wider">{sys}</span>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <div className="bg-[#0f172a] border border-[#2a374f] px-3 py-1 rounded flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 uppercase font-bold">OIPM A</span>
-                                    <span className={`text-xs font-mono font-bold ${oipm.A > 0 ? 'text-[#0ff]' : 'text-slate-600'}`}>{oipm.A.toLocaleString()}</span>
-                                </div>
-                                <div className="bg-[#0f172a] border border-[#2a374f] px-3 py-1 rounded flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 uppercase font-bold">OIPM B</span>
-                                    <span className={`text-xs font-mono font-bold ${oipm.B > 0 ? 'text-[#0ff]' : 'text-slate-600'}`}>{oipm.B.toLocaleString()}</span>
-                                </div>
-                                <div className="text-[10px] text-slate-500 font-mono">Build: v7.5.0-gold</div>
-                            </div>
-                        </div>
-                    </div>
+                    {/* FOOTER / LOGS removed - unified System Logs panel in layout */}
                 </main>
             </div >
         </div >

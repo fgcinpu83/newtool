@@ -301,6 +301,25 @@ export class ChromeConnectionManager {
         }
     }
 
+    /** Close a tab by id. Requires CONNECTED state. */
+    async closeTab(port: number, tabId: string): Promise<boolean> {
+        this.assertConnected(port);
+        try {
+            // Attempt standard HTTP close endpoint
+            await fetch(`http://localhost:${port}/json/close/${tabId}`, { method: 'PUT', signal: AbortSignal.timeout(3000) });
+        } catch (e) {
+            // best-effort: ignore errors
+        }
+
+        // refresh tab count
+        try {
+            const tabs = await this.fetchTabCount(port);
+            // fetchTabCount already updates internal state
+        } catch (e) { /* ignore */ }
+
+        return true;
+    }
+
     // ─── STATIC HELPERS ─────────────────────────────
 
     static portFor(account: 'A' | 'B'): number {

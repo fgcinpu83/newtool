@@ -97,6 +97,19 @@ chrome.runtime.onMessage.addListener((message) => {
     }
 
     if (message.type === 'OFFSCREEN_PING') {
+        // Emit a backend ping event so the gateway can measure and propagate latency
+        try {
+            const acc = message.account || null;
+            const payload = {};
+            if (typeof message.ping === 'number') payload.ping = Number(message.ping);
+            if (typeof message.ts === 'number') payload.ts = Number(message.ts);
+            if (acc) payload.account = acc;
+            if (isConnected && socket) {
+                try { socket.emit('client_ping', payload); } catch (e) { /* ignore */ }
+            }
+        } catch (e) { }
+
+        // Reply to background to confirm offscreen received the ping
         chrome.runtime.sendMessage({ type: 'OFFSCREEN_PONG', timestamp: Date.now() });
     }
 });

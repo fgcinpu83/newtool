@@ -7,8 +7,12 @@ import { toggleAccount, setUrl } from '../websocket/client'
  export default function AccountPanel({ account, state }: { account: 'A' | 'B', state: BackendState }) {
    const isA = account === 'A'
    // minimal mapping - these fields should come from backend state in a full implementation
-   const balance = isA ? (state.executionHistory.length ? '$4,250.00' : '$0.00') : '$0.00'
-   const ping = isA ? '45 ms' : '-- ms'
+  const balance = isA ? (state.executionHistory.length ? '$4,250.00' : '$0.00') : '$0.00'
+  // Derive ping from backend single-source contract: primary_ping_ms / secondary_ping_ms
+  const acctRuntime = (state as any)[account] || (account === 'A' ? (state as any).A : (state as any).B) || null
+  const systemState = (state as any).system || (state as any)
+  const rawPing = account === 'A' ? (systemState.primary_ping_ms ?? null) : (systemState.secondary_ping_ms ?? null)
+  const ping = rawPing != null ? rawPing : '—'
 
   // simple local toggle component defined inline to avoid creating new file
   function AccountToggle({ isA }: { isA: boolean }) {
@@ -35,7 +39,7 @@ import { toggleAccount, setUrl } from '../websocket/client'
 
     return (
       <button
-        aria-pressed={enabled ? 'true' : 'false'}
+        aria-pressed={enabled}
         aria-label={isA ? 'Toggle primary account' : 'Toggle secondary account'}
         onClick={handleClick}
         className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${enabled ? 'bg-green-500 text-black' : 'bg-gray-700 text-white'}`}
@@ -45,26 +49,21 @@ import { toggleAccount, setUrl } from '../websocket/client'
     )
   }
 
-    // provider presence detection from backend sensors (best-effort)
-    function getProviderStatus(providerRegex: RegExp) {
-      const s = state.sensors?.find(sensor => providerRegex.test(sensor.provider))
-      if (!s) return 'offline'
-      // Try to infer freshness from lastPacket if it's a timestamp
-      const lp = s.lastPacket
-      // lastPacket may be ISO string or numeric timestamp or other; attempt parse
-      const ts = Date.parse(lp)
-      if (isNaN(ts)) {
-        // unknown format — treat as warn (present but unknown freshness)
-        return 'warn'
-      }
-      const age = Date.now() - ts
-      if (age < 30_000) return 'ready' // <30s
-      if (age < 120_000) return 'stale' // 30s-2m
-      return 'error' // >2m
-    }
+    // Provider status MUST be derived only from backend account runtime fields
+    // Use `state.A` / `state.B` shape produced by backend.getState() when available
+    const acct = acctRuntime
+    const runtimeState: string = acct?.state || 'IDLE'
+    const streamActive: boolean = !!acct?.streamActive
+    const providerTargetId: string | null = acct?.providerTargetId || null
 
-    const sabaStatus = getProviderStatus(/saba/i)
-    const afbStatus = getProviderStatus(/afb|afb88/i)
+    // Map runtime state to UI indicator color per invariant
+    const indicatorClass = runtimeState === 'RUNNING'
+      ? 'bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]'
+      : runtimeState === 'PROVIDER_READY'
+        ? 'bg-yellow-400'
+        : runtimeState === 'BROWSER_READY'
+          ? 'bg-blue-400'
+          : 'bg-slate-600'
 
     return (
       <div className="bg-surface-dark border border-border-dark rounded-lg p-4">
@@ -111,29 +110,14 @@ import { toggleAccount, setUrl } from '../websocket/client'
         </div>
 
         <div className="flex flex-col items-start gap-1 bg-background-dark/30 p-2 rounded border border-border-dark/30 mt-3">
-          <div className="grid grid-cols-5 gap-4 w-full items-center">
-            <div className="flex justify-center">
-              <div className={`w-2.5 h-2.5 rounded-full ${sabaStatus === 'ready' ? 'bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]' : sabaStatus === 'stale' ? 'bg-warning' : sabaStatus === 'error' ? 'bg-danger' : 'bg-slate-600'}`}></div>
+          <div className="w-full flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${indicatorClass}`}></div>
+              <div className="text-xs text-slate-300">
+                {runtimeState}{streamActive ? ' · active' : ''}
+              </div>
             </div>
-            <div className="flex justify-center">
-              <div className={`w-2.5 h-2.5 rounded-full ${afbStatus === 'ready' ? 'bg-success shadow-[0_0_5px_rgba(34,197,94,0.6)]' : afbStatus === 'stale' ? 'bg-warning' : afbStatus === 'error' ? 'bg-danger' : 'bg-slate-600'}`}></div>
-            </div>
-            <div className="flex justify-center">
-              <div className="w-2.5 h-2.5 rounded-full bg-slate-600"></div>
-            </div>
-            <div className="flex justify-center">
-              <div className="w-2.5 h-2.5 rounded-full bg-slate-600"></div>
-            </div>
-            <div className="flex justify-center">
-              <div className="w-2.5 h-2.5 rounded-full bg-slate-600"></div>
-            </div>
-          </div>
-          <div className="grid grid-cols-5 gap-4 w-full mt-1 text-center">
-            <div className="text-[10px] text-slate-400 uppercase font-medium">SABA</div>
-            <div className="text-[10px] text-slate-400 uppercase font-medium">AFB88</div>
-            <div></div>
-            <div></div>
-            <div></div>
+            <div className="ml-4 text-xs text-slate-400">Provider: {providerTargetId || 'unbound'}</div>
           </div>
         </div>
       </div>

@@ -53,4 +53,13 @@ export class MinimalController {
     // deterministic diagnostics for operators
     return JSON.parse(JSON.stringify(this.engine.getState()));
   }
+
+  @Get('system-health')
+  async systemHealth(): Promise<any> {
+    try {
+      return { success: true, health: this.engine.getSystemHealth() };
+    } catch (e) {
+      return { success: false, error: (e && (e as Error).message) || String(e) };
+    }
+  }
 }

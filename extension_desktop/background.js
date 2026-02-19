@@ -966,6 +966,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
             status: isConnected ? 'CONNECTED' : 'DISCONNECTED',
             activeTabs: activeTabs.size
         });
+        // Send an OFFSCREEN_PING to offscreen document so it emits a real ping to backend.
+        try {
+            const accounts = ['A', 'B'];
+            for (const acc of accounts) {
+                try {
+                    chrome.runtime.sendMessage({ type: 'OFFSCREEN_PING', ts: Date.now(), account: acc });
+                } catch (e) { }
+            }
+        } catch (e) { }
     }
 
     if (alarm.name === 'capture') {

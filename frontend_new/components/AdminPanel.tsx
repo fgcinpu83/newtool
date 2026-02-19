@@ -78,7 +78,6 @@ export default function AdminPanel() {
         <h3 className="text-lg font-semibold text-white">Admin — Provider Contracts & DB History</h3>
         <div className="flex items-center gap-2">
           <button onClick={refreshContracts} className="px-3 py-1 bg-primary/10 text-primary text-sm rounded border border-primary/20">Refresh Contracts</button>
-          <button onClick={loadDbHistory} className="px-3 py-1 bg-primary/10 text-primary text-sm rounded border border-primary/20">Load DB History</button>
         </div>
       </div>
 
@@ -111,40 +110,6 @@ export default function AdminPanel() {
                   </div>
                 )
               })
-            )}
-          </div>
-        </div>
-
-        <div>
-          <h4 className="text-sm text-slate-300 mb-2">Persisted Execution History (DB)</h4>
-          <div className="max-h-72 overflow-auto rounded border border-border-dark/40 bg-background-dark p-2 space-y-2">
-            {loadingHistory ? (
-              <div className="text-sm text-slate-400">Loading...</div>
-            ) : dbHistory.length === 0 ? (
-              <div className="text-sm text-slate-500 italic text-center py-6">No persisted execution history (DB)</div>
-            ) : (
-              <table className="w-full text-sm table-auto">
-                <thead>
-                  <tr className="text-slate-400 text-xs">
-                    <th className="px-2 text-left">time</th>
-                    <th className="px-2 text-left">match</th>
-                    <th className="px-2 text-right">stakeA</th>
-                    <th className="px-2 text-right">stakeB</th>
-                    <th className="px-2 text-left">result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dbHistory.map(r => (
-                    <tr key={r.id} className="border-t border-border-dark/10 even:bg-background-dark/20">
-                      <td className="px-2 text-xs text-slate-400">{new Date(r.timestamp).toLocaleString()}</td>
-                      <td className="px-2">{r.match}</td>
-                      <td className="px-2 text-right">{r.stakeA}</td>
-                      <td className="px-2 text-right">{r.stakeB}</td>
-                      <td className="px-2"><span className="text-xs text-slate-300">{r.profitResult}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             )}
           </div>
         </div>

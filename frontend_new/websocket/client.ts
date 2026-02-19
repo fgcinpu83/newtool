@@ -11,14 +11,16 @@ declare global {
 
 type MessageHandler = (msg: BackendState) => void
 
-const SOCKET_PATH = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'
+// WebSocket host (gateway) and REST base (backend service)
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:3001'
+const REST_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
 
 function getSocket(): Socket {
   if (typeof window === 'undefined') {
     throw new Error('Socket unavailable on server')
   }
   if (!window.__NEWTOOL_SOCKET__) {
-    const s = io(SOCKET_PATH, { autoConnect: true })
+    const s = io(WS_URL, { autoConnect: true })
     window.__NEWTOOL_SOCKET__ = s
   }
   return window.__NEWTOOL_SOCKET__ as Socket
@@ -83,7 +85,7 @@ export function sendCommand(command: string, payload?: unknown) {
 }
 
 export async function toggleAccount(accountId: 'A' | 'B', enabled: boolean) {
-  await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/toggle', {
+  await fetch(REST_BASE + '/api/toggle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ account: accountId, active: enabled })
@@ -91,7 +93,7 @@ export async function toggleAccount(accountId: 'A' | 'B', enabled: boolean) {
 
   // refresh backend snapshot and notify UI
   try {
-    const res = await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/backend-state')
+    const res = await fetch(REST_BASE + '/api/backend-state')
     const state = await res.json()
     if (onStateCallback) onStateCallback(state as BackendState)
   } catch (e) {
@@ -100,7 +102,7 @@ export async function toggleAccount(accountId: 'A' | 'B', enabled: boolean) {
 }
 
 export async function setUrl(accountId: 'A' | 'B', url: string) {
-  await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/set-url', {
+  await fetch(REST_BASE + '/api/set-url', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ account: accountId, url })
@@ -108,7 +110,7 @@ export async function setUrl(accountId: 'A' | 'B', url: string) {
 
   // refresh backend snapshot and notify UI
   try {
-    const res = await fetch((process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + '/api/backend-state')
+    const res = await fetch(REST_BASE + '/api/backend-state')
     const state = await res.json()
     if (onStateCallback) onStateCallback(state as BackendState)
   } catch (e) {
