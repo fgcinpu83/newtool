@@ -1,10 +1,11 @@
 import { Controller, Post, Body, Get } from '@nestjs/common';
 import { EngineService } from '../engine.service';
 import { BrowserAutomationService } from '../workers/browser.automation';
+import { WorkerService } from '../workers/worker.service';
 
 @Controller('api/debug')
 export class MinimalDebugController {
-  constructor(private readonly engine: EngineService, private readonly browser: BrowserAutomationService) {}
+  constructor(private readonly engine: EngineService, private readonly browser: BrowserAutomationService, private readonly worker: WorkerService) {}
 
   @Post('simulate-update-config')
   simulateUpdateConfig(@Body() body: { account: string; url: string }): any {
@@ -53,9 +54,9 @@ export class MinimalDebugController {
     try {
       const state = (this.engine as any).getState();
       (state[acc] as any).browserSession = { port: 9222, targetId, url: (state[acc] as any).url || null };
-      // Replace internal accounts map so summaries reflect binding
-      (this.engine as any).accounts = state;
-      return { success: true, state: JSON.parse(JSON.stringify((this.engine as any).getState())) };
+      // Replace the WorkerService internal accounts snapshot so summaries reflect binding
+      this.worker.replaceState(state);
+      return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
     } catch (e) {
       return { success: false, error: String(e) };
     }

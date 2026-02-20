@@ -14,15 +14,13 @@ import { ArbitrageOpportunity } from '../arbitrage/schemas';
 import { ExecutionResult } from './schemas';
 import { GlobalExecutionGuard, ExecutionBlockedError } from '../guards/global-execution.guard';
 import { executeHedge } from './hedge.service';
-import { isExecuting, startExecution, endExecution } from './execution.lock';
+// execution.lock removed (Master Context v4.0): double-run protection handled by guard/audit layer
 import { canPlace, addExposure, reduceExposure } from './exposure.service';
-import { startEngineWatchdog } from './engine.watchdog';
 import { SqliteService } from '../shared/sqlite.service';
 
 const sqlite = new SqliteService();
 
-// Start watchdog in production (safe no-op in CI/test)
-startEngineWatchdog();
+// Watchdog removed per Master Context v4.0 — no background auto-recovery or forced lock release
 
 const EXECUTION_TIMEOUT_MS = parseInt(String(process.env.EXECUTION_TIMEOUT_MS || '30000'));
 
@@ -33,16 +31,9 @@ export async function executeArbitrage(
     let hedgeTriggered = false;
     const matchId = opp.GlobalEventID || `M_${Date.now()}`;
 
-    // Double-run protection
-    if (isExecuting(matchId)) {
-        console.warn('[ENGINE] Duplicate execution prevented for', matchId);
-        return null;
-    }
+    // NOTE: In-process execution lock removed (no global executionLock flags).
+    // Double-run protection is enforced via guard/SQLite audit semantics instead.
 
-    // Reserve execution slot
-    startExecution(matchId);
-
-    // Ensure we always release slot
     let auditRowId: number | null = null;
     // Guard THROWS if blocked — catch and abort cleanly
     try {
@@ -65,7 +56,7 @@ export async function executeArbitrage(
             console.error(`[ENGINE] Unexpected guard error:`, err);
             if (auditRowId) sqlite.updateExecutionAudit(auditRowId, { final_status: 'FAILED', error_message: (err as Error).message });
         }
-        endExecution(matchId);
+        // execution lock removed — nothing to release
         return null;
     }
 
@@ -83,14 +74,12 @@ export async function executeArbitrage(
         const msg = '[ENGINE] Exposure limit exceeded for A';
         console.warn(msg);
         if (auditRowId) sqlite.updateExecutionAudit(auditRowId, { final_status: 'ABORTED', error_message: msg });
-        endExecution(matchId);
         return null;
     }
     if (!canPlace('B', matchId, opp.SideB.Stake)) {
         const msg = '[ENGINE] Exposure limit exceeded for B';
         console.warn(msg);
         if (auditRowId) sqlite.updateExecutionAudit(auditRowId, { final_status: 'ABORTED', error_message: msg });
-        endExecution(matchId);
         return null;
     }
 
@@ -107,7 +96,7 @@ export async function executeArbitrage(
 
     if (firstResult.Status !== 'ACCEPTED') {
         if (auditRowId) sqlite.updateExecutionAudit(auditRowId, { legA_status: firstResult.Status || 'FAILED', final_status: 'ABORTED', error_message: firstResult.__reason || null });
-        endExecution(matchId);
+        // execution lock removed — nothing to release
         return {
             GlobalEventID: opp.GlobalEventID,
             MarketType: opp.MarketType,
@@ -137,7 +126,7 @@ export async function executeArbitrage(
         // Reduce exposure for A since hedge attempted/failed
         try { reduceExposure('A', matchId, opp.SideA.Stake); } catch (e) {}
         if (auditRowId) sqlite.updateExecutionAudit(auditRowId, { legB_status: secondResult.Status || 'FAILED', hedge_triggered: true, final_status: 'HEDGED', error_message: secondResult.__reason || null });
-        endExecution(matchId);
+        // execution lock removed — nothing to release
         return {
             GlobalEventID: opp.GlobalEventID,
             MarketType: opp.MarketType,
@@ -163,7 +152,7 @@ export async function executeArbitrage(
         console.warn('[ENGINE] Failed to update audit after execution:', e && (e as any).message ? (e as any).message : String(e));
     }
 
-    endExecution(matchId);
+        // execution lock removed — nothing to release
 
     return {
         GlobalEventID: opp.GlobalEventID,

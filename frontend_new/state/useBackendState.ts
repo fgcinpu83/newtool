@@ -45,8 +45,8 @@ export function useBackendState(): BackendState {
           // derive per-account active flags from FSM == RUNNING
           // keep previous fsm.state for backward compatibility but prefer Account A
           fsm: { state: (accountA?.fsm || accountB?.fsm || prev.fsm.state) as any },
-          accountA_active: accountA ? accountA.fsm === 'RUNNING' : (prev as any).accountA_active,
-          accountB_active: accountB ? accountB.fsm === 'RUNNING' : (prev as any).accountB_active
+          accountA_active: accountA ? accountA.fsm === 'ACTIVE' : (prev as any).accountA_active,
+          accountB_active: accountB ? accountB.fsm === 'ACTIVE' : (prev as any).accountB_active
         }))
         return
       }
@@ -76,7 +76,7 @@ export function useBackendState(): BackendState {
     let mounted = true
     const fetchSystemState = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/system/state')
+        const res = await fetch('http://127.0.0.1:3001/api/system/state')
         if (!res.ok) return
         const s = await res.json()
         if (!mounted) return
@@ -103,7 +103,7 @@ export function useBackendPolling() {
     let mounted = true
     const fetchSystemState = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/system/state')
+        const res = await fetch('http://127.0.0.1:3001/api/system/state')
         if (!res.ok) return
         const s = await res.json()
         // dispatch global window event so components can consume if needed

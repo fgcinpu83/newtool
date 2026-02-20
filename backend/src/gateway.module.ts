@@ -13,6 +13,7 @@ import { EngineService } from './engine.service';
 import { BrowserAutomationService } from './workers/browser.automation';
 import { ChromeConnectionManager } from './managers/chrome-connection.manager';
 import { ChromeLauncher } from './chrome/chrome-launcher.service';
+import { WorkerModule } from './workers/worker.module';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnApplicationBootstrap {
@@ -271,6 +272,13 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
     // Basic methods used by WorkerService - updated for Socket.IO
     sendUpdate(event: string, data: any) {
+        // In CI/test mode we MUST NOT emit real WebSocket messages — keep internal bus only
+        const IS_CI = process.env.CI === 'true' || process.env.NODE_ENV === 'test';
+        if (IS_CI) {
+            // still allow internal listeners to observe traffic via trafficBus
+            this.trafficBus.emit(event, data);
+            return;
+        }
         if (!this.server) return;
         this.server.emit(event, data);
     }
@@ -282,7 +290,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 }
 
 @Module({
-    imports: [],
+    imports: [WorkerModule],
     providers: [AppGateway, EngineService, BrowserAutomationService, ChromeLauncher, ChromeConnectionManager],
     exports: [AppGateway, EngineService, BrowserAutomationService]
 })

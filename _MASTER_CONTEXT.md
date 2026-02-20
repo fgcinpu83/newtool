@@ -1,86 +1,197 @@
-Minimal Stable Engine — Master Context
+🏛 MASTER CONTEXT — MINIMAL STABLE ENGINE
 
-Version: 1.0
-Scope: Minimal Stable Arbitrage Engine (2 accounts)
+Version: 4.0 (Authoritative Constitution)
+Status: FINAL & LOCKED
 
-System Philosophy
-- Simplicity > Complexity
-- Deterministic, explicit transitions only
-- User-driven actions (no automatic retries or hidden guards)
+1️⃣ SYSTEM PURPOSE
 
-Core Components
-- `WorkerService`: single orchestrator holding `accounts` runtime state for `A` and `B`.
-- `BrowserAutomationService`: executor with two APIs: `openBrowser(account,url)` and `closeBrowser(account)`.
-- `Extension`: performs provider marking via `PROVIDER_MARKED(accountId)`.
-- `Stream detection`: first stream packet advances account to `RUNNING`.
+Deterministic Desktop Arbitrage Engine
+Scope: 2 Accounts (A vs B)
+Target: Single-instance production safe
 
-AccountRuntime
-- `accountId`: 'A' | 'B'
-- `state`: one of `IDLE | BROWSER_OPENING | BROWSER_READY | PROVIDER_READY | RUNNING | STOPPING`
-- `url`: configured whitelabel URL or null
-- `browserSession`: opaque session object or null
-- `providerMarked`: boolean
-- `streamActive`: boolean
+System guarantees:
 
-Operational Rules
-- Toggle ON: direct call to `BrowserAutomationService.openBrowser`; no retries, no event token.
-- Provider must be explicitly marked by extension (`PROVIDER_MARKED`).
-- First stream packet moves account to `RUNNING` and starts observer.
-- Toggle OFF: direct close via `BrowserAutomationService.closeBrowser` and reset runtime state.
+Strict account isolation
 
-No automatic recovery, no internal token-based FSM, and no complex event orchestration.
+Deterministic transitions
 
-After refactor: build, start backend, test workflow for each account manually.
+Single backend brain
 
-Detect execution timeout violation
+No hidden retry logic
 
-Release stale locks
+No automatic recovery
 
-Emit system_log
+No dual backend architecture
 
-CI/test mode:
-Watchdog disabled.
+2️⃣ ARCHITECTURE (LOCKED)
+✅ Single Backend: NestJS ONLY
 
-1️⃣2️⃣ CI SAFE MODE LAW
+FastAPI is constitutionally removed.
 
-When:
+Ports:
 
-CI=true
-OR
-NODE_ENV=test
+Backend: 3001
 
+Chrome Remote Debug: 9222
 
-System must:
+Frontend: 3000
 
-Mock ChromeLauncher
+No second backend allowed.
 
-Mock CDP session
+Runtime Topology
+React UI (3000)
+     ↓ REST / WS
+NestJS Orchestrator (3001)
+     ↓
+WorkerService (FSM per account)
+     ↓
+BrowserAutomationService (CDP 9222)
+     ↓
+Chrome Instance (1 profile per account)
+     ↓
+Extension (Provider marking + stream)
 
-Avoid localhost:9222 HTTP probe
+Single source of truth = NestJS memory state.
 
-Avoid real WebSocket connect
+3️⃣ CORE SERVICES
+WorkerService
 
-Bypass exposure caps
+Holds:
 
-Disable watchdog
+accounts = {
+  A: AccountRuntime,
+  B: AccountRuntime
+}
 
-Never call process.exit()
+Single orchestrator brain.
+No global mutable cross-account state.
 
-CI must be deterministic.
+BrowserAutomationService
 
-1️⃣3️⃣ STORAGE LAW
+Only two public APIs allowed:
 
-SQLite is mandatory for:
+openBrowser(accountId, url)
+closeBrowser(accountId)
 
-Provider contracts
+No retries.
+No implicit spawn.
+No auto relaunch.
 
-Execution audit
+Extension Contract
 
-Hedge events
+Extension may only:
+
+Emit:
+
+PROVIDER_MARKED(accountId)
+
+STREAM_PACKET(accountId, data)
+
+Extension may NOT:
+
+Control FSM
+
+Trigger arbitrage
+
+Modify backend state directly
+
+4️⃣ ACCOUNT RUNTIME (LOCKED STRUCTURE)
+AccountRuntime {
+  accountId: 'A' | 'B'
+  state: IDLE | STARTING | WAIT_PROVIDER | ACTIVE | STOPPING
+  url: string | null
+  browserSession: object | null
+  providerMarked: boolean
+  streamActive: boolean
+}
+
+No extra flags allowed.
+No legacy states allowed.
+
+5️⃣ FSM LAW (NON-NEGOTIABLE)
+
+Valid transitions only:
+
+IDLE → STARTING
+STARTING → WAIT_PROVIDER
+WAIT_PROVIDER → ACTIVE
+ACTIVE → STOPPING
+STOPPING → IDLE
+
+Invalid transitions = rejected + system_log.
+
+FSM must never remain in STARTING.
+
+No hidden transitions allowed.
+
+6️⃣ TOGGLE LAW
+Toggle ON
+
+Direct actions only:
+
+state = STARTING
+openBrowser()
+→ WAIT_PROVIDER
+
+No retries.
+No event tokens.
+No background guards.
+
+Provider must be marked explicitly.
+
+Provider Marked
+
+When extension emits:
+
+PROVIDER_MARKED(accountId)
+
+→ state remains WAIT_PROVIDER
+→ waiting for first stream packet
+
+First Stream Packet
+STREAM_PACKET(accountId)
+
+→ state = ACTIVE
+→ observer starts
+
+Toggle OFF (Hard Reset Law)
+
+Must:
+
+closeBrowser()
+
+clear providerMarked
+
+clear streamActive
+
+clear session
+
+state → IDLE
+
+No partial reset allowed.
+
+7️⃣ ENGINE GATING LAW
+
+Arbitrage Engine may run only if:
+
+Account A state == ACTIVE
+Account B state == ACTIVE
+
+No exception.
+
+8️⃣ STORAGE LAW (LOCKED)
+
+SQLite mandatory for:
+
+provider_contracts
+
+execution_history
+
+hedge_events
 
 Redis:
 
-Optional performance layer
+Optional
 
 Not required for boot
 
@@ -88,39 +199,110 @@ Not required for audit
 
 System must boot without Redis.
 
-1️⃣4️⃣ FRONTEND PURITY LAW
+9️⃣ CI SAFE MODE LAW
+
+When:
+
+CI=true
+OR
+NODE_ENV=test
+
+System must:
+
+Mock ChromeLauncher
+
+Mock CDP attach
+
+No 9222 HTTP probe
+
+No real WebSocket
+
+No process.exit()
+
+No watchdog
+
+No external side-effects
+
+CI must be deterministic.
+
+🔟 FRONTEND PURITY LAW
 
 Frontend may:
 
-Render state
+Render backend state
 
-Send commands
+Send toggle / commands
 
 Frontend may NOT:
 
-Execute provider parsing
-
 Execute arbitrage logic
 
-Maintain global business state
+Parse provider traffic
 
-All logic belongs to backend.
+Maintain business state
 
-1️⃣5️⃣ ERROR HANDLING LAW
+Create fallback state
+
+Backend = single authority.
+
+11️⃣ ERROR HANDLING LAW
 
 All fatal conditions must:
 
 Emit structured system_log
 
-Safely reset FSM if needed
+Reset FSM safely
 
 Release execution locks
 
 Never crash process
 
-Uncaught promise rejection forbidden.
+No uncaught promise rejection
 
-1️⃣6️⃣ CURRENT SYSTEM STATUS
+12️⃣ WHAT IS REMOVED FOREVER
+
+Dual backend (FastAPI removed)
+
+Token-based FSM
+
+Compatibility ping wrappers
+
+Dual naming (primary_ping_ms vs accountA_ping)
+
+Automatic retry loops
+
+Background self-healing
+
+Multi-provider per account (Phase 1 forbidden)
+
+13️⃣ PHASE STATUS
+
+Phase 1 = Minimal Stable Engine
+Scope:
+
+1 provider per account
+
+2 accounts total
+
+Deterministic manual workflow
+
+No distributed coordination
+
+Status: Constitutionally Locked.
+
+14️⃣ FUTURE PHASE (NOT ACTIVE)
+
+Multi-provider per account
+
+Distributed lock manager
+
+Capital allocation engine
+
+Multi-instance coordination
+
+Not part of current engine.
+
+15️⃣ CURRENT SYSTEM STATUS
 Component	Status
 Account Isolation	ENFORCED
 Provider Contract	ENFORCED
@@ -133,185 +315,16 @@ Watchdog	ACTIVE (Prod only)
 CI Safe Mode	ACTIVE
 Global State Leak	ELIMINATED
 
-System is production-safe for single-instance deployment.
+System is deterministic and production-safe (single instance).
 
-1️⃣7️⃣ PHASE STATUS
+FINAL CONSTITUTIONAL CLAUSE
 
-Phase 1 = COMPLETE
-Architecture hardened.
-Deterministic execution enforced.
-CI stable.
+Any deviation from this document requires:
 
-Next phase (optional future):
+Explicit amendment
 
-Multi-instance exposure coordination
+Version bump
 
-Distributed lock manager
+Migration note
 
-Risk model tuning
-
-Capital allocation engine
-
-END OF MASTER CONTEXT v3.3
-Authoritative.
-Any deviation requires explicit constitutional amendment.
-
----
-
-# 1️⃣ SYSTEM PURPOSE
-
-Deterministic Desktop Arbitrage Engine with:
-
-- Strict Account Isolation
-- Provider Contract Filtering
-- Single Tab per Account
-- CI Safe Mode
-- No Synthetic ID Fallback
-
-This document is authoritative. All implementation must comply.
-
----
-
-# 2️⃣ CONSTITUTION RULES (NON-NEGOTIABLE)
-
-1. One Chrome profile per account.
-2. One active tab per account.
-3. Provider contract required before processing odds.
-4. No fallback ID generation.
-5. No global mutable state.
-6. No Chrome spawn in CI mode.
-7. No process.exit() on runtime failure.
-8. All failures emit `system_log`.
-
----
-
-# 3️⃣ ACCOUNT ISOLATION ARCHITECTURE
-
-Each account maintains:
-
-- Independent FSM
-- Independent Chrome instance
-- Independent provider contract
-- Independent status lamp
-- Independent odds cache
-
-Cross-contamination forbidden.
-
----
-
-# 4️⃣ PROVIDER CONTRACT LAW
-
-Provider contract must:
-
-- Be user-marked
-- Be persisted
-- Match traffic pattern
-- Block all unmatched traffic
-
-Multiple contracts per account (Phase 1) = FORBIDDEN.
-
----
-
-# 5️⃣ FSM ENFORCEMENT
-
-Valid transitions only:
-
-IDLE → STARTING → WAIT_PROVIDER → ACTIVE → STOPPING → IDLE
-
-Invalid transitions must be rejected.
-
-FSM must never remain stuck in STARTING.
-
----
-
-# 6️⃣ CI SAFE MODE CONSTITUTION
-
-When CI/test:
-
-- ChromeLauncher returns mock
-- CDP attach returns mock
-- No HTTP probe to port 9222
-- No real WebSocket
-- No external side-effects
-
-System must pass CI even without Chrome installed.
-
----
-
-# 7️⃣ ENGINE GATING LAW
-
-Arbitrage Engine may run only if:
-
-- Account A providerStatus = GREEN
-- Account B providerStatus = GREEN
-- Engine state = RUNNING
-
-No exception.
-
----
-
-# 8️⃣ STORAGE LAW
-
-SQLite:
-- provider_contracts
-- execution_history
-
-Redis:
-- Performance layer only
-- Not required for boot
-
----
-
-# 9️⃣ FRONTEND PURITY RULE
-
-Frontend may:
-
-- Render state
-- Send commands
-
-Frontend may NOT:
-
-- Contain provider parsing
-- Execute arbitrage logic
-- Maintain global business state
-
----
-
-# 🔟 HARD RESET RULE
-
-Toggle OFF must:
-
-- Close tab
-- Detach CDP
-- Clear provider contract
-- Clear odds cache
-- Set providerStatus = RED
-- FSM → IDLE
-
-No partial reset allowed.
-
----
-
-# 11️⃣ ERROR HANDLING LAW
-
-All fatal conditions must:
-
-- Emit structured system_log
-- Reset FSM safely
-- Never crash process
-
----
-
-# 12️⃣ CURRENT IMPLEMENTATION STATUS
-
-- AccountContext Isolation: ACTIVE
-- CI Safe Mode: ACTIVE
-- Provider Contract System: ACTIVE
-- AdminPanel Persistence: ACTIVE
-- Chrome/CDP Guard: ACTIVE
-
-System is deterministic and CI-stable.
-
----
-
-END OF MASTER CONTEXT
+No silent architectural change allowed.

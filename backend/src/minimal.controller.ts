@@ -62,4 +62,14 @@ export class MinimalController {
       return { success: false, error: (e && (e as Error).message) || String(e) };
     }
   }
+
+  // Compatibility endpoint (replaces removed FastAPI `/api/system/state`)
+  @Get('system/state')
+  async systemState(): Promise<any> {
+    try {
+      return this.engine.getState();
+    } catch (e) {
+      return { error: (e && (e as Error).message) || String(e) };
+    }
+  }
 }

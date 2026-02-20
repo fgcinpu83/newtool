@@ -14,8 +14,8 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { ProviderSessionManager } from '../managers/provider-session.manager';
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
+import { WorkerService } from '../workers/worker.service';
 
 // ─── Minimal context — guard does NOT validate stake/odds (executor concern) ───
 export interface ExecutionContext {
@@ -41,7 +41,7 @@ export class GlobalExecutionGuard {
     private readonly logger = new Logger(GlobalExecutionGuard.name);
 
     constructor(
-        private providerManager: ProviderSessionManager,
+        private worker: WorkerService,
         private chromeManager: ChromeConnectionManager,
     ) {}
 
@@ -54,15 +54,12 @@ export class GlobalExecutionGuard {
 
         this.logger.log(`[GUARD] Checking ${account}:${providerId}`);
 
-        // 1. Provider must be READY
-        const providerState = this.providerManager.getProviderState(providerId);
-        if (!providerState || providerState.state !== 'READY') {
-            const reason = `Provider ${providerId} not READY (state: ${providerState?.state ?? 'UNKNOWN'})`;
+        // 1. Account-level provider must be marked (WorkerService is single source of truth)
+        const acct = this.worker.accounts[account];
+        if (!acct || !acct.providerMarked) {
+            const reason = `Provider for account ${account} not marked`;
             this.logger.warn(`[GUARD] BLOCKED — ${reason}`);
-            throw new ExecutionBlockedError('PROVIDER', reason, {
-                providerId,
-                currentState: providerState?.state ?? 'UNKNOWN',
-            });
+            throw new ExecutionBlockedError('PROVIDER', reason, { account, providerId });
         }
 
         // 2. Chrome must be CONNECTED for this account
@@ -71,20 +68,14 @@ export class GlobalExecutionGuard {
         if (chromeInfo.state !== 'CONNECTED') {
             const reason = `Chrome not CONNECTED for account ${account} (state: ${chromeInfo.state})`;
             this.logger.warn(`[GUARD] BLOCKED — ${reason}`);
-            throw new ExecutionBlockedError('CHROME', reason, {
-                account,
-                port,
-                currentState: chromeInfo.state,
-            });
+            throw new ExecutionBlockedError('CHROME', reason, { account, port, currentState: chromeInfo.state });
         }
 
-        // 3. System must be READY (both accounts have READY providers)
-        if (!this.providerManager.isSystemReady()) {
-            const reason = 'System not READY — both accounts must have READY providers';
+        // 3. System must be READY per Constitution: both accounts must be ACTIVE
+        if (!(this.worker.accounts.A.state === 'ACTIVE' && this.worker.accounts.B.state === 'ACTIVE')) {
+            const reason = 'System not READY — both accounts must be ACTIVE';
             this.logger.warn(`[GUARD] BLOCKED — ${reason}`);
-            throw new ExecutionBlockedError('SYSTEM', reason, {
-                systemStatus: this.providerManager.getSystemStatus(),
-            });
+            throw new ExecutionBlockedError('SYSTEM', reason, { systemState: { A: this.worker.accounts.A.state, B: this.worker.accounts.B.state } });
         }
 
         this.logger.log(`[GUARD] ALLOWED ${account}:${providerId}`);
@@ -92,15 +83,15 @@ export class GlobalExecutionGuard {
 
     // ─── Read-only helpers (for UI / gateway status) ────────────────────────
 
-    /** Quick boolean for dashboard readiness indicator */
+    /** Quick boolean for dashboard readiness indicator (WorkerService authoritative) */
     isSystemReady(): boolean {
-        return this.providerManager.isSystemReady();
+        return this.worker.accounts.A.state === 'ACTIVE' && this.worker.accounts.B.state === 'ACTIVE';
     }
 
     /** Detailed snapshot for status endpoints */
     getSystemStatus() {
         return {
-            providers: this.providerManager.getAllProviderStates(),
+            workers: this.worker.getState(),
             chrome: this.chromeManager.getAllStates(),
             systemReady: this.isSystemReady(),
         };

@@ -2,40 +2,21 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { BrowserAutomationService } from './workers/browser.automation';
 import { ChromeConnectionManager } from './managers/chrome-connection.manager';
+import { WorkerService, AccountRuntime, FSMState } from './workers/worker.service';
 
-type WorkerState =
-  | 'IDLE'
-  | 'BROWSER_OPENING'
-  | 'BROWSER_READY'
-  | 'PROVIDER_READY'
-  | 'RUNNING'
-  | 'STOPPING';
-
-interface AccountRuntime {
-  state: WorkerState;
-  url: string | null;
-  browserSession: any | null;
-  providerMarked: boolean;
-  streamActive: boolean;
-  providerTargetId?: string | null;
-  lastStreamTs?: number | null;
-  streamRate?: number | null;
-  _streamTimer?: any;
-  ping?: number | null;
-}
+/**
+ * EngineService — lightweight orchestrator that delegates runtime state to WorkerService.
+ * Conforms to Master Context v4.0 FSM: IDLE → STARTING → WAIT_PROVIDER → ACTIVE → STOPPING
+ */
 
 @Injectable()
 export class EngineService implements OnModuleInit {
   private readonly logger = new Logger(EngineService.name);
-  private accounts: Record<'A' | 'B', AccountRuntime> = {
-    A: { state: 'IDLE', url: null, browserSession: null, providerMarked: false, streamActive: false, providerTargetId: null, lastStreamTs: null, ping: null },
-    B: { state: 'IDLE', url: null, browserSession: null, providerMarked: false, streamActive: false, providerTargetId: null, lastStreamTs: null, ping: null }
-  };
 
   private readonly STREAM_RATE_THRESHOLD: number = Number(process.env.STREAM_RATE_THRESHOLD || 10);
   private readonly STREAM_INACTIVITY_MS: number = Number(process.env.STREAM_INACTIVITY_MS || 5000);
 
-  constructor(private browser: BrowserAutomationService, private moduleRef: ModuleRef, private chromeManager: ChromeConnectionManager) {}
+  constructor(private browser: BrowserAutomationService, private moduleRef: ModuleRef, private chromeManager: ChromeConnectionManager, private worker: WorkerService) {}
 
   onModuleInit() {
     // Wire gateway trafficBus if available to receive stream payloads
@@ -84,7 +65,7 @@ export class EngineService implements OnModuleInit {
 
       // Try to bind tabs to accounts based on stored url patterns or title
       for (const acct of ['A', 'B'] as Array<'A' | 'B'>) {
-        const acc = this.accounts[acct];
+        const acc = this.worker.accounts[acct];
         if (acc.browserSession) {
           if (acc.browserSession.targetId) bound.add(String(acc.browserSession.targetId));
           continue;
@@ -98,13 +79,11 @@ export class EngineService implements OnModuleInit {
           } catch { return false; }
         });
 
-        if (match) {
-          // Re-bind this tab to the account
-          acc.browserSession = { port, targetId: String(match.id), url: match.url } as any;
-          acc.providerTargetId = null;
-          acc.providerMarked = false;
-          acc.streamActive = false;
-          this.setState(acct, 'BROWSER_READY');
+            if (match) {
+          // Re-bind this tab to the account (delegate mutation to WorkerService)
+          this.worker.setBrowserSession(acct, { port, targetId: String(match.id), url: match.url });
+          // On startup we consider re-bound sessions as WAIT_PROVIDER (provider must be explicitly marked)
+          this.setState(acct, 'WAIT_PROVIDER');
           bound.add(String(match.id));
           this.logger.log(`[RECONCILE] Re-bound tab ${match.id} to account ${acct}`);
         }
@@ -112,7 +91,7 @@ export class EngineService implements OnModuleInit {
 
       // If there are remaining tabs and both accounts are IDLE, close orphan tabs
       const remaining = tabs.filter(t => !bound.has(String(t.id)));
-      const bothIdle = this.accounts.A.state === 'IDLE' && this.accounts.B.state === 'IDLE';
+      const bothIdle = this.worker.accounts.A.state === 'IDLE' && this.worker.accounts.B.state === 'IDLE';
       if (remaining.length > 0 && bothIdle) {
         for (const t of remaining) {
           try {
@@ -132,17 +111,18 @@ export class EngineService implements OnModuleInit {
     if (enabled) return this.toggleOn(accountId);
     return this.toggleOff(accountId);
   }
-  private setState(accountId: 'A' | 'B', next: WorkerState) {
-    const acc = this.accounts[accountId];
-    const prev = acc.state;
-    acc.state = next;
+
+  // Centralised state setter — delegate actual mutation to WorkerService.transition()
+  private setState(accountId: 'A' | 'B', next: FSMState) {
+    const prev = this.worker.accounts[accountId].state;
+    this.worker.transition(accountId, next);
     this.logger.log(`[STATE] ${accountId}: ${prev} -> ${next}`);
-    // check invariants after transitions
+    // FSM invariant checks (worker.transition already enforces preconditions)
     try { this.assertInvariants(accountId); } catch (e) { this.logger.error('Invariant assertion failed', e as any); }
   }
 
   async toggleOn(accountId: 'A' | 'B') {
-    const acc = this.accounts[accountId];
+    const acc = this.worker.accounts[accountId];
 
     this.logger.log(`[FLOW] Toggle ON requested for ${accountId}`);
     this.logger.log(`toggleOn called for ${accountId}, current state=${acc.state}, url=${acc.url}`);
@@ -157,7 +137,8 @@ export class EngineService implements OnModuleInit {
       throw new Error('URL_NOT_SET');
     }
 
-    this.setState(accountId, 'BROWSER_OPENING');
+    // Per constitution: Toggle ON -> STARTING -> openBrowser() -> WAIT_PROVIDER
+    this.setState(accountId, 'STARTING');
 
     this.logger.log(`[FLOW] calling openBrowser for ${accountId} ${acc.url}`);
     const session = await this.browser.openBrowser(accountId, acc.url);
@@ -170,26 +151,24 @@ export class EngineService implements OnModuleInit {
       throw new Error('OPEN_BROWSER_FAILED');
     }
 
-    acc.browserSession = session;
-    if (!acc.browserSession) {
+    // Delegate storing session + reset of provider/stream flags to WorkerService
+    this.worker.setBrowserSession(accountId, session);
+    const stored = this.worker.accounts[accountId].browserSession;
+    if (!stored) {
       this.logger.log(`[FLOW] Browser session missing after open for ${accountId}`);
       this.setState(accountId, 'IDLE');
       throw new Error('BROWSER_SESSION_MISSING');
     }
 
-    // Reset provider binding and stream state on new session
-    acc.providerTargetId = null;
-    acc.providerMarked = false;
-    acc.streamActive = false;
-
-    this.setState(accountId, 'BROWSER_READY');
-    this.logger.log(`[FLOW] Browser opened successfully for ${accountId}`);
+    // After successful open, move to WAIT_PROVIDER and wait for explicit PROVIDER_MARKED
+    this.setState(accountId, 'WAIT_PROVIDER');
+    this.logger.log(`[FLOW] Browser opened successfully for ${accountId} — waiting provider mark`);
 
     return true;
   }
 
   async toggleOff(accountId: 'A' | 'B') {
-    const acc = this.accounts[accountId];
+    const acc = this.worker.accounts[accountId];
 
     this.logger.log(`[FLOW] Toggle OFF requested for ${accountId}, current state=${acc.state}`);
 
@@ -209,18 +188,11 @@ export class EngineService implements OnModuleInit {
       }
     }
 
-    this.accounts[accountId] = {
-      state: 'IDLE',
-      url: null,
-      browserSession: null,
-      providerMarked: false,
-      streamActive: false,
-      providerTargetId: null,
-      lastStreamTs: null
-    };
+    // Hard reset via WorkerService (must clear all runtime fields)
+    this.worker.hardResetAccount(accountId);
 
     // validate hard reset
-    const after = this.accounts[accountId];
+    const after = this.worker.accounts[accountId];
     if (after.state !== 'IDLE' || after.browserSession !== null || after.providerMarked !== false || after.streamActive !== false) {
       this.logger.error(`[FLOW] Toggle OFF hard reset failed for ${accountId} -> ${JSON.stringify(after)}`);
       throw new Error('TOGGLE_OFF_DIRTY');
@@ -231,25 +203,15 @@ export class EngineService implements OnModuleInit {
   }
 
   setUrl(accountId: 'A' | 'B', url: string) {
-    const acc = this.accounts[accountId];
+    const acc = this.worker.accounts[accountId];
     const prev = acc.url;
     acc.url = url;
     this.logger.log(`[FLOW] setUrl ${accountId}: ${prev} -> ${url}`);
   }
 
   providerMarked(accountId: 'A' | 'B') {
-    const acc = this.accounts[accountId];
-    // Reject if no browser session exists
-    if (!acc.browserSession) {
-      this.logger.error(`[FLOW] providerMarked rejected for ${accountId} - no browser session`);
-      throw new Error('NO_BROWSER_SESSION');
-    }
-
-    // Bind provider to the account's current tab targetId
-    acc.providerTargetId = acc.browserSession.targetId || null;
-    acc.providerMarked = true;
-    this.setState(accountId, 'PROVIDER_READY');
-    this.logger.log(`[FLOW] providerMarked for ${accountId}, bound target=${acc.providerTargetId}`);
+    // Delegate provider marking and single-provider enforcement to WorkerService
+    this.worker.markProvider(accountId);
   }
 
   /**
@@ -257,7 +219,7 @@ export class EngineService implements OnModuleInit {
    * streamPayload expected shape: { targetId?: string, rate?: number }
    */
   streamDetected(accountId: 'A' | 'B', streamPayload?: any) {
-    const acc = this.accounts[accountId];
+    const acc = this.worker.accounts[accountId];
 
     try {
       if (!acc.browserSession) {
@@ -278,9 +240,14 @@ export class EngineService implements OnModuleInit {
 
       // Auto-bind provider if not yet bound but target matches session
       if (!acc.providerTargetId && targetId && acc.browserSession && acc.browserSession.targetId === targetId) {
-        acc.providerTargetId = targetId;
-        acc.providerMarked = true;
-        this.logger.log(`[FLOW] auto-bound provider for ${accountId} to target=${targetId}`);
+        // Delegate auto-bind to WorkerService (enforces single-provider contract)
+        try {
+          this.worker.markProvider(accountId, targetId);
+          this.logger.log(`[FLOW] auto-bound provider for ${accountId} to target=${targetId}`);
+        } catch (err) {
+          this.logger.warn(`[FLOW] auto-bind rejected for ${accountId}: ${err && (err as Error).message}`);
+          return;
+        }
       }
 
       if (rate < this.STREAM_RATE_THRESHOLD) {
@@ -293,27 +260,24 @@ export class EngineService implements OnModuleInit {
         return;
       }
 
-      // mark active and record timestamp/rate BEFORE state transition
+      // mark active and record timestamp/rate (do NOT perform background-driven state changes)
       acc.streamActive = true;
       acc.lastStreamTs = Date.now();
       acc.streamRate = rate;
 
-      // reset inactivity timer (clear old then create new)
+      // reset inactivity timer (clear old then create new) — only updates streamActive flag on timeout
       try { if (acc._streamTimer) { clearTimeout(acc._streamTimer); acc._streamTimer = undefined; } } catch (e) {}
       acc._streamTimer = setTimeout(() => {
         try {
           acc.streamActive = false;
           this.logger.log(`[FLOW] stream inactivity timeout for ${accountId} - streamActive set to false`);
-          if (acc.state === 'RUNNING') {
-            this.logger.log(`[FLOW] RUNNING -> PROVIDER_READY for ${accountId} due to inactivity`);
-            this.setState(accountId, 'PROVIDER_READY');
-          }
+          // Per constitution: NO background guard — do NOT change FSM state automatically on inactivity
         } catch (e) { this.logger.error('stream inactivity handler failed', e as any); }
       }, this.STREAM_INACTIVITY_MS as any);
 
-      // Transition to RUNNING if not already - do this after marking streamActive
-      if (acc.state !== 'RUNNING') {
-        this.setState(accountId, 'RUNNING');
+      // Transition to ACTIVE if not already - do this after marking streamActive
+      if (acc.state !== 'ACTIVE') {
+        this.setState(accountId, 'ACTIVE');
       }
 
       this.logger.log(`[FLOW] streamDetected for ${accountId} accepted (rate=${rate})`);
@@ -333,7 +297,7 @@ export class EngineService implements OnModuleInit {
       chromeConnected = false;
     }
 
-    const mismatch = chromeConnected && openTabs > 0 && this.accounts.A.state === 'IDLE' && this.accounts.B.state === 'IDLE';
+    const mismatch = chromeConnected && openTabs > 0 && this.worker.accounts.A.state === 'IDLE' && this.worker.accounts.B.state === 'IDLE';
 
     return {
       chromeConnected,
@@ -345,7 +309,7 @@ export class EngineService implements OnModuleInit {
   }
 
   private summarize(accountId: 'A' | 'B') {
-    const a = this.accounts[accountId];
+    const a = this.worker.accounts[accountId];
     return {
       state: a.state,
       session: a.browserSession,
@@ -355,63 +319,36 @@ export class EngineService implements OnModuleInit {
   }
 
   private assertInvariants(accountId: 'A' | 'B') {
-    const a = this.accounts[accountId];
-    if (a.state === 'BROWSER_READY' && !a.browserSession) {
-      this.logger.error(`INVARIANT VIOLATION: ${accountId} is BROWSER_READY but browserSession is null`);
-      throw new Error('INVARIANT_BROWSER_READY_NO_SESSION');
+    const a = this.worker.accounts[accountId];
+
+    // STARTING must be transient — warn if it persists
+    if (a.state === 'STARTING') {
+      this.logger.warn(`INVARIANT: ${accountId} in STARTING state — should transition quickly`);
     }
 
-    if (a.state === 'RUNNING' && !a.streamActive) {
-      // Only revert to PROVIDER_READY when there is no recent stream activity
+    // If WAIT_PROVIDER, browserSession must exist
+    if (a.state === 'WAIT_PROVIDER' && !a.browserSession) {
+      this.logger.error(`INVARIANT VIOLATION: ${accountId} is WAIT_PROVIDER but browserSession is null`);
+      throw new Error('INVARIANT_WAIT_PROVIDER_NO_SESSION');
+    }
+
+    // ACTIVE must have recent stream activity (streamActive flag may be false transiently but we do not auto-revert state)
+    if (a.state === 'ACTIVE' && !a.streamActive) {
       const last = a.lastStreamTs || 0;
       const age = Date.now() - last;
-      if (!last || age > this.STREAM_INACTIVITY_MS) {
-        this.logger.log(`INVARIANT: ${accountId} RUNNING but streamActive false → reverting to PROVIDER_READY`);
-        this.setState(accountId, 'PROVIDER_READY');
-      } else {
-        this.logger.log(`INVARIANT: ${accountId} RUNNING but streamActive false — recent activity (${age}ms) exists, keeping RUNNING`);
-      }
+      this.logger.log(`INVARIANT: ${accountId} ACTIVE but streamActive false — lastStream=${last} age=${age}ms`);
     }
   }
 
   // Return a sanitized copy of engine state suitable for JSON serialization
   getState() {
-    const out: any = { A: {}, B: {} };
-    for (const k of ['A', 'B'] as Array<'A' | 'B'>) {
-      const s = this.accounts[k];
-      out[k] = {
-        state: s.state,
-        url: s.url,
-        browserSession: s.browserSession ? { port: s.browserSession.port, targetId: s.browserSession.targetId, url: s.browserSession.url } : null,
-        providerMarked: s.providerMarked,
-        streamActive: s.streamActive,
-        providerTargetId: s.providerTargetId || null,
-        lastStreamTs: s.lastStreamTs || null,
-        streamRate: s.streamRate || null
-      };
-    }
-
-    // Export top-level single-source latency fields only
-    const aPing = (this.accounts.A && (this.accounts.A as any).ping != null) ? (this.accounts.A as any).ping : null;
-    const bPing = (this.accounts.B && (this.accounts.B as any).ping != null) ? (this.accounts.B as any).ping : null;
-    (out as any).primary_ping_ms = aPing;
-    (out as any).secondary_ping_ms = bPing;
-
-    // Log summary of ping values for debugging telemetry propagation
-    try {
-      this.logger.log(`[PING] getState -> primary_ping_ms=${aPing} secondary_ping_ms=${bPing}`);
-    } catch (e) {}
-
-    return out as any;
+    // Delegate to WorkerService snapshot (single source of truth)
+    return this.worker.getState();
   }
 
   // Set measured ping (ms) for an account. Accepts null to clear.
   setPing(accountId: 'A' | 'B', ms: number | null) {
-    const acc = this.accounts[accountId];
-    acc.ping = ms;
-    // Log update so we can trace telemetry propagation
-    try {
-      this.logger.log(`[PING] setPing ${accountId} = ${ms}`);
-    } catch (e) {}
+    this.worker.setPing(accountId, ms);
+    try { this.logger.log(`[PING] setPing ${accountId} = ${ms}`); } catch (e) {}
   }
 }

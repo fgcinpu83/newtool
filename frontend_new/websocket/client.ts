@@ -13,7 +13,7 @@ type MessageHandler = (msg: BackendState) => void
 
 // WebSocket host (gateway) and REST base (backend service)
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:3001'
-const REST_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000'
+const REST_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:3001'
 
 function getSocket(): Socket {
   if (typeof window === 'undefined') {

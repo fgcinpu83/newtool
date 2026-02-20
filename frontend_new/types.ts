@@ -1,4 +1,4 @@
-export type FSMState = 'IDLE' | 'STARTING' | 'RUNNING' | 'STOPPING'
+export type FSMState = 'IDLE' | 'STARTING' | 'WAIT_PROVIDER' | 'ACTIVE' | 'STOPPING'
 
 export interface ConnectionState {
   backendConnected: boolean
