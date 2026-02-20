@@ -62,18 +62,38 @@ export class WorkerService {
    * Central FSM transition API — ALL runtime state changes MUST go through here.
    * Throws on illegal/unauthorised transitions.
    */
+  /**
+   * Validates a transition according to the Master Context v4.0 FSM.
+   * Throws on illegal move.
+   */
+  private validateTransition(from: FSMState, to: FSMState) {
+    const allowed: Record<FSMState, FSMState[]> = {
+      IDLE: ['STARTING'],
+      STARTING: ['WAIT_PROVIDER'],
+      WAIT_PROVIDER: ['ACTIVE', 'STOPPING'],
+      ACTIVE: ['STOPPING'],
+      STOPPING: ['IDLE'],
+    };
+
+    if (!allowed[from] || !allowed[from].includes(to)) {
+      throw new Error(`INVALID_FSM_TRANSITION ${from} → ${to}`);
+    }
+  }
+
   transition(accountId: 'A' | 'B', to: FSMState) {
     const info = this.accounts[accountId];
     if (!info) throw new Error(`Unknown account: ${accountId}`);
     const from = info.state;
     if (from === to) return; // noop
 
-    if (!this.ALLOWED_TRANSITIONS[from].includes(to)) {
+    // centralised guard
+    try {
+      this.validateTransition(from, to);
+    } catch (e) {
       const msg = `Illegal FSM transition ${from} → ${to} for account ${accountId}`;
       this.logger.error(msg);
-      // Emit structured system_log for visibility
       try { const p = require('path'); const fs = require('fs'); fs.appendFileSync(p.join(process.cwd(),'logs','wire_debug.log'), JSON.stringify({ ts: Date.now(), tag: 'FSM_ILLEGAL_TRANSITION', accountId, from, to, message: msg }) + '\n'); } catch(e){}
-      throw new Error(msg);
+      throw e;
     }
 
     // Preconditions for specific transitions

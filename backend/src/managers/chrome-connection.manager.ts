@@ -20,6 +20,7 @@
 
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ChromeLauncher } from '../chrome/chrome-launcher.service';
+import { WorkerService } from '../workers/worker.service';
 
 // ─── State Machine ───────────────────────────────────
 export type ChromeConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR';
@@ -52,6 +53,8 @@ export class ChromeConnectionManager {
     constructor(
         @Inject(forwardRef(() => ChromeLauncher))
         private readonly launcher: ChromeLauncher,
+        @Inject(forwardRef(() => WorkerService))
+        private readonly worker: WorkerService,
     ) {
         for (const port of [9222]) {
             this.ports.set(port, {
@@ -160,6 +163,15 @@ export class ChromeConnectionManager {
                 lastChecked: Date.now(),
                 attachedAt: undefined,
             });
+            // propagate to WorkerService via constitutional-safe transitions
+            try {
+                const acc = ChromeConnectionManager.accountFor(port);
+                if (acc) {
+                    this.logger.log(`[SYSTEM_LOG] Chrome error on account ${acc} port ${port}: ${err.message}`);
+                    this.worker.transition(acc, 'STOPPING');
+                    this.worker.transition(acc, 'IDLE');
+                }
+            } catch(e) {}
             this.logger.log(`[OBSERVE] Chrome connection failed - port ${port} error: ${err.message}`);
             return this.getInfo(port);
         }

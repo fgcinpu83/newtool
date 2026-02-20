@@ -19,5 +19,15 @@
         "noFallthroughCasesInSwitch": false,
         "downlevelIteration": true,
         "useDefineForClassFields": false
-    }
+    },
+    "exclude": [
+        "node_modules",
+        "dist",
+        "**/*.spec.ts",
+        "test/**/*",
+        "src/test",
+        "src/dev",
+        "cold_run_launcher.ts",
+        "debug_pairing_test.ts"
+    ]
 }

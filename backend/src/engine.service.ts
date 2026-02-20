@@ -265,15 +265,6 @@ export class EngineService implements OnModuleInit {
       acc.lastStreamTs = Date.now();
       acc.streamRate = rate;
 
-      // reset inactivity timer (clear old then create new) — only updates streamActive flag on timeout
-      try { if (acc._streamTimer) { clearTimeout(acc._streamTimer); acc._streamTimer = undefined; } } catch (e) {}
-      acc._streamTimer = setTimeout(() => {
-        try {
-          acc.streamActive = false;
-          this.logger.log(`[FLOW] stream inactivity timeout for ${accountId} - streamActive set to false`);
-          // Per constitution: NO background guard — do NOT change FSM state automatically on inactivity
-        } catch (e) { this.logger.error('stream inactivity handler failed', e as any); }
-      }, this.STREAM_INACTIVITY_MS as any);
 
       // Transition to ACTIVE if not already - do this after marking streamActive
       if (acc.state !== 'ACTIVE') {
