@@ -1,17 +1,10 @@
 @echo off
-:: Auto-log wrapper: if not already running with logging, re-launch self into
-:: a new cmd window that redirects stdout/stderr to a logfile so double-click works.
-if "%ORCH_LOGGING%"=="" (
-    set "ORCH_LOGGING=1"
-    set "ORCH_LOGFILE=%~dp0orchestrator_run.log"
-    echo Starting orchestrator (logging to %ORCH_LOGFILE%)...
-    :: create a temporary wrapper cmd to avoid quoting complexity
-    set "ORCH_TMP=%TEMP%\orch_wrapper_%RANDOM%.cmd"
-    >"%ORCH_TMP%" echo @echo off
-    >>"%ORCH_TMP%" echo "%~f0" %* ^> "%ORCH_LOGFILE%" 2^>^&1
-    start "ORCHESTRATOR" cmd /k "%ORCH_TMP%"
-    exit /b
-)
+rem ------------------------------------------------------------------
+rem  Minimal Orchestrator (Master) - Architecture v4.0 compliant
+rem  Simplified to avoid wrapper logic that can crash when invoked from
+rem  PowerShell or by double-click.  All logging is to console; users may
+rem  redirect manually if desired.
+rem ------------------------------------------------------------------
 
 echo ================================
 echo   ANTIGRAVITY MASTER START
@@ -113,3 +106,7 @@ if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
 echo ================================
 echo   SYSTEM FULLY STARTED
 echo ================================
+
+echo.
+echo Press any key to exit...
+pause >nul
