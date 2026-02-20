@@ -11,7 +11,7 @@ export class MinimalController {
     const acc = body && body.account === 'B' ? 'B' : 'A';
     const url = String(body && body.url ? body.url : '');
     await this.engine.setUrl(acc as 'A' | 'B', url);
-    return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+    return { success: true, state: { accounts: JSON.parse(JSON.stringify(this.engine.getState())) } };
   }
 
   @Post('toggle')
@@ -35,7 +35,7 @@ export class MinimalController {
 
       return {
         success: true,
-        state: this.engine.getState()
+        state: { accounts: this.engine.getState() }
       };
     } catch (err: any) {
       console.error('[MINIMAL_CTRL] toggle error:', err && err.message ? err.message : String(err));
@@ -45,13 +45,13 @@ export class MinimalController {
 
   @Get('backend-state')
   async getState(): Promise<any> {
-    return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+    return { success: true, state: { accounts: JSON.parse(JSON.stringify(this.engine.getState())) } };
   }
 
   @Get('flow-diagnostics')
   async flowDiagnostics(): Promise<any> {
     // deterministic diagnostics for operators
-    return JSON.parse(JSON.stringify(this.engine.getState()));
+    return { accounts: JSON.parse(JSON.stringify(this.engine.getState())) };
   }
 
   @Get('system-health')
@@ -67,7 +67,7 @@ export class MinimalController {
   @Get('system/state')
   async systemState(): Promise<any> {
     try {
-      return this.engine.getState();
+      return { accounts: this.engine.getState() };
     } catch (e) {
       return { error: (e && (e as Error).message) || String(e) };
     }

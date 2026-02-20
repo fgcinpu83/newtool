@@ -39,7 +39,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
             this.server && this.server.emit && this.server.emit('system:ready', {
                 status: 'ready',
                 ts: Date.now(),
-                systemStatus: this.engine.getState()
+                systemStatus: { accounts: this.engine.getState() }
             });
         }, 1000);
 
@@ -206,7 +206,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
             if (acc === 'A' || acc === 'B') {
                 try { this.engine.setPing(acc as 'A'|'B', measured); } catch (e) { /* ignore */ }
                 // Broadcast updated state so UI sees latest ping
-                this.sendUpdate('state', this.engine.getState());
+                this.sendUpdate('state_update', { accounts: this.engine.getState() });
             }
 
             client.emit('pong', { ok: true, ts: Date.now(), ping: measured });
@@ -231,7 +231,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
                 const acc = (String(cmd.payload?.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
                 const url = String(cmd.payload?.url || '');
                 this.engine.setUrl(acc as 'A'|'B', url);
-                this.sendUpdate('state', this.engine.getState());
+                this.sendUpdate('state_update', { accounts: this.engine.getState() });
                 return;
             }
 
@@ -239,14 +239,14 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
                 const acc = (String(cmd.payload?.account || cmd.payload?.accountId || 'A').toUpperCase() === 'B') ? 'B' : 'A';
                 const enabled = Boolean(cmd.payload?.enabled ?? cmd.payload?.active);
                 await this.engine.toggle(acc as 'A'|'B', enabled);
-                this.sendUpdate('state', this.engine.getState());
+                this.sendUpdate('state_update', { accounts: this.engine.getState() });
                 return;
             }
 
             if (t === 'PROVIDER_MARKED') {
                 const acc = (String(cmd.payload?.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
                 this.engine.providerMarked(acc as 'A'|'B');
-                this.sendUpdate('state', this.engine.getState());
+                this.sendUpdate('state_update', { accounts: this.engine.getState() });
                 return;
             }
 
@@ -254,12 +254,12 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
                 const acc = (String(cmd.payload?.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
                 // pass full payload to engine for validation (targetId, rate, etc.)
                 this.engine.streamDetected(acc as 'A'|'B', cmd.payload || {});
-                this.sendUpdate('state', this.engine.getState());
+                this.sendUpdate('state_update', { accounts: this.engine.getState() });
                 return;
             }
 
             if (t === 'GET_STATE') {
-                this.sendUpdate('state', this.engine.getState());
+                this.sendUpdate('state_update', { accounts: this.engine.getState() });
                 return;
             }
 

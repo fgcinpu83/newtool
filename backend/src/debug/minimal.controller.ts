@@ -11,7 +11,7 @@ export class MinimalDebugController {
   simulateUpdateConfig(@Body() body: { account: string; url: string }): any {
     const acc = (String(body.account || 'A').toUpperCase() === 'B') ? 'B' : 'A';
     this.engine.setUrl(acc as 'A' | 'B', String(body.url || ''));
-    return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+    return { success: true, state: { accounts: JSON.parse(JSON.stringify(this.engine.getState())) } };
   }
 
   @Post('simulate-toggle')
@@ -21,7 +21,7 @@ export class MinimalDebugController {
       console.log(`[DEBUG_CTRL] simulateToggle called for ${acc} active=${Boolean(body.active)}`);
       await this.engine.toggle(acc as 'A' | 'B', Boolean(body.active));
       console.log(`[DEBUG_CTRL] simulateToggle returned for ${acc}`);
-      return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+      return { success: true, state: { accounts: JSON.parse(JSON.stringify(this.engine.getState())) } };
     } catch (err: any) {
       return { success: false, error: err && err.message ? err.message : String(err) };
     }
@@ -29,7 +29,7 @@ export class MinimalDebugController {
 
   @Get('backend-state')
   backendState(): any {
-    return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+    return { success: true, state: { accounts: JSON.parse(JSON.stringify(this.engine.getState())) } };
   }
 
   @Post('open-browser')
@@ -56,7 +56,7 @@ export class MinimalDebugController {
       (state[acc] as any).browserSession = { port: 9222, targetId, url: (state[acc] as any).url || null };
       // Replace the WorkerService internal accounts snapshot so summaries reflect binding
       this.worker.replaceState(state);
-      return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+      return { success: true, state: { accounts: JSON.parse(JSON.stringify(this.engine.getState())) } };
     } catch (e) {
       return { success: false, error: String(e) };
     }
@@ -79,7 +79,7 @@ export class MinimalDebugController {
     const payload = { targetId: body.targetId, rate: body.rate };
     try {
       this.engine.streamDetected(acc as 'A' | 'B', payload as any);
-      return { success: true, state: JSON.parse(JSON.stringify(this.engine.getState())) };
+      return { success: true, state: { accounts: JSON.parse(JSON.stringify(this.engine.getState())) } };
     } catch (e: any) {
       return { success: false, error: e && e.message ? e.message : String(e) };
     }

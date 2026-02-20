@@ -7,14 +7,16 @@ Goals
 - Simple, explicit state transitions. No internal token guards, retries, or event-driven FSMs.
 
 Architecture
-- `WorkerService`: single orchestrator; holds `accounts` state for `A` and `B`.
+- `WorkerService`: single authoritative service; holds `accounts` state for `A` and `B` (FSM enforced: IDLE | STARTING | WAIT_PROVIDER | ACTIVE | STOPPING).
 - `BrowserAutomationService`: executor with two simple APIs: `openBrowser(account,url)` and `closeBrowser(account)`.
-- `Extension`: marks provider via `PROVIDER_MARKED` event.
-- `Stream detection`: first stream packet transitions account to `RUNNING`.
+- `Extension`: marks provider via `PROVIDER_MARKED` event (WorkerService enforces single-provider-per-account).
+- `Stream detection`: first valid stream packet sets `streamActive` and (when providerMarked) transitions account to `ACTIVE`.
 
 State Flow
 
-IDLE → BROWSER_OPENING → BROWSER_READY → PROVIDER_READY → RUNNING → STOPPING → IDLE
+IDLE → STARTING → WAIT_PROVIDER → ACTIVE → STOPPING → IDLE
+
+(Constitution v4.0 — WorkerService is the single source of truth for AccountRuntime; no non-v4 state names such as READY/EXECUTING/COMPLETED/LOCKED are used.)
 
 User Workflow
 - Set `urlA` / `urlB` via config
@@ -26,7 +28,7 @@ User Workflow
 Principles
 - Simplicity over complexity
 - Deterministic transitions only
-- No automatic retries or hidden fallback logic
+- No automatic retries, no hidden fallback, and no background auto-recovery (conforms to Master Context v4.0)
 
 See `backend/src/workers/worker.service.ts` and `backend/src/workers/browser.automation.ts` for implementation.
 
@@ -225,10 +227,11 @@ Admin Panel:
 
 # 📈 Current System Status
 
-- Provider Isolation: ENFORCED
-- CI Self-Stabilizing: ENABLED
-- AccountContext Isolation: ACTIVE
-- Admin Persistence: ACTIVE
+- Provider Isolation: ENFORCED (single-provider-per-account)
+- CI Safe Mode: ENABLED (Chrome/CDP mocked in CI/test)
+- FSM (Master Context v4.0): IDLE | STARTING | WAIT_PROVIDER | ACTIVE | STOPPING
+- No background auto-recovery or hidden retries
+- WebSocket: emits `state_update` with payload { accounts: { A: {...}, B: {...} } } (includes `ping` inside each account runtime)
 - No Global State Leaks: VERIFIED
 
 ---
