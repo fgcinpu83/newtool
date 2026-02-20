@@ -75,30 +75,40 @@ endlocal
 
 echo [1/5] Preflight complete.
 
-REM Start Backend (idempotent)
+REM Start Backend (idempotent) - compile then run production binary
 echo [2/5] Starting Backend (idempotent)...
+:: ensure compiled output exists (build) before launching
+cd backend && npm run build >nul 2>&1
 :: If port 3001 is already in use, skip starting backend to avoid EADDRINUSE
 netstat -ano | findstr :3001 >nul
 if %ERRORLEVEL% EQU 0 (
     echo [BACKEND] port 3001 already in use - skipping start.
 ) else (
-    echo [BACKEND] not in use - starting backend...
-    start "BACKEND" cmd /k "cd backend && npm run start"
+    echo [BACKEND] not in use - starting backend (prod)...
+    start "BACKEND" cmd /k "cd backend && npm run start:prod"
 )
 
 REM Wait backend boot
 timeout /t 5 >nul
 
-REM Start Frontend only after backend ready
+REM Start Frontend only after backend ready (optional)
 echo [3/5] Starting Frontend (after backend healthy)...
-start "FRONTEND" cmd /k "cd frontend_new && npm run dev"
+if exist "frontend_new" (
+    start "FRONTEND" cmd /k "cd frontend_new && npm run dev"
+) else (
+    echo [FRONTEND] folder not present, skipping frontend launch.
+)
 
-REM Launch Chrome Remote Debugging
+REM Launch Chrome Remote Debugging (single instance) 
 echo [4/5] Launching Chrome with remote debugging...
-start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" ^
- --remote-debugging-port=9222 ^
- --user-data-dir="E:\newtool\chrome-profile" ^
- --load-extension="E:\newtool\extension_desktop"
+if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
+    start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+     --remote-debugging-port=9222 ^
+     --user-data-dir="E:\newtool\chrome-profile" ^
+     --load-extension="E:\newtool\extension_desktop"
+) else (
+    echo [CHROME] binary not found, please install Chrome or adjust path.
+)
 
 echo ================================
 echo   SYSTEM FULLY STARTED
