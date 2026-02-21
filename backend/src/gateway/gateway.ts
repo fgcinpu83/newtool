@@ -40,6 +40,15 @@ export class AppGateway {
     this.server.emit('backend_state', this.engine.getState());
   }
 
+  // alias to avoid silent failures if clients emit alternate name
+  @SubscribeMessage('STREAM_PACKET')
+  handleStreamAlias(
+    @MessageBody() payload: { account: 'A' | 'B' },
+  ) {
+    // reuse existing logic exactly
+    return this.handleStream(payload as any);
+  }
+
   broadcastState() {
     const st = this.engine.getState();
     // frontend only expects `backend_state`

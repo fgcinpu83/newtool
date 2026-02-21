@@ -18,11 +18,17 @@ export class SystemController {
 
   @Post('toggle')
   // frontend-driven contract: `active` boolean, not `enabled`
-  toggle(@Body() body: { account: 'A' | 'B'; active: boolean }) {
-    if (body.active) {
-      this.engine.toggleOn(body.account);
-    } else {
-      this.engine.toggleOff(body.account);
+  async toggle(@Body() body: { account: 'A' | 'B'; active: boolean }) {
+    try {
+      if (body.active) {
+        await this.engine.toggleOn(body.account);
+      } else {
+        await this.engine.toggleOff(body.account);
+      }
+    } catch (e: any) {
+      // emit structured system_log so UI / monitoring can surface the error
+      const msg = e && e.message ? e.message : String(e);
+      this.gateway.server.emit('system_log', { level: 'error', message: `toggle failed: ${msg}` });
     }
     this.gateway.broadcastState();
     return { ok: true };

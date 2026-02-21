@@ -100,7 +100,7 @@ export class EngineService {
   }
 
   // ----- workflow helpers -----
-  toggleOn(accountId: 'A' | 'B') {
+  async toggleOn(accountId: 'A' | 'B') {
     const account = this.worker.getAccount(accountId);
 
     if (account.state !== 'IDLE') return;
@@ -111,19 +111,34 @@ export class EngineService {
       throw new Error('URL_NOT_SET');
     }
 
-    this.browser.openBrowser(accountId, account.url);
-
-    this.worker.transition(accountId, 'WAIT_PROVIDER');
+    // await browser startup; do not advance FSM until success
+    try {
+      const res = await this.browser.openBrowser(accountId, account.url);
+      if (!res) {
+        throw new Error('BROWSER_OPEN_FAILED');
+      }
+      this.worker.transition(accountId, 'WAIT_PROVIDER');
+    } catch (e) {
+      // rollback to IDLE on failure
+      this.worker.transition(accountId, 'IDLE');
+      // rethrow so caller (controller) can log and inform user
+      throw e;
+    }
   }
 
-  toggleOff(accountId: 'A' | 'B') {
+  async toggleOff(accountId: 'A' | 'B') {
     const account = this.worker.getAccount(accountId);
 
     if (account.state === 'IDLE') return;
 
     this.worker.transition(accountId, 'STOPPING');
 
-    this.browser.closeBrowser(accountId);
+    try {
+      await this.browser.closeBrowser(accountId);
+    } catch (e) {
+      // ignore closing errors but log if necessary
+      console.error('[EngineService] closeBrowser failed', e);
+    }
 
     this.worker.hardResetAccount(accountId);
   }

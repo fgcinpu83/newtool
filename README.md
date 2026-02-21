@@ -43,6 +43,14 @@ and any changes to state fields *must* be made there first; backend code must
 continue to return an object that exactly matches that type (no additional
 wrapping or adapter layers).
 
+**Note:** the WebSocket gateway accepts both `STREAM_DETECTED` and `STREAM_PACKET`
+for compatibility with existing extensions.  Clients should send one of these
+values; the backend treats them identically to avoid silent failures.
+
+The `EngineService.toggleOn` method now **awaits** `BrowserAutomationService.openBrowser`
+and will roll back the FSM to `IDLE` and emit a `system_log` if browser startup
+fails.  This ensures the FSM only advances when the browser is actually available.
+
 Key points:
 
 1. `EngineService.getState()` transforms internal `WorkerService` runtime data
