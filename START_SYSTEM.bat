@@ -1,7 +1,8 @@
 @echo off
 REM === START_SYSTEM.bat ===
 
-setlocal
+REM use delayed expansion so we can capture working dir inside parentheses
+setlocal enabledelayedexpansion
 set "ROOT=%~dp0"
 echo ==============================
 echo = Minimal System Starter =
@@ -20,7 +21,7 @@ if exist "%ROOT%backend" (
     echo [INFO] Compiling backend...
     npm run build
 
-    start "BACKEND" cmd /k cd /d "%CD%" ^&^& title BACKEND ^&^& npm run start
+    start "BACKEND" cmd /k cd /d "!CD!" ^&^& title BACKEND ^&^& npm run start
     popd
 ) else (
     echo [ERROR] backend folder not found.
@@ -35,7 +36,7 @@ if exist "%ROOT%frontend_new" (
         npm install
     )
 
-    start "FRONTEND" cmd /k cd /d "%CD%" ^&^& title FRONTEND ^&^& npm run dev
+    start "FRONTEND" cmd /k cd /d "!CD!" ^&^& title FRONTEND ^&^& npm run dev
     popd
 ) else (
     echo [WARN] frontend_new folder not found.
