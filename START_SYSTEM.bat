@@ -16,7 +16,8 @@ if exist "%ROOT%backend" (
     )
     echo [INFO] Compiling backend TypeScript...
     npm run build
-    start "BACKEND" cmd /k "title BACKEND && npm run start"
+    REM ensure the new window starts in the backend directory
+    start "BACKEND" cmd /k "cd /d \"%CD%\" && title BACKEND && npm run start"
     popd
 ) else (
     echo [ERROR] backend folder not found: %ROOT%backend
@@ -29,7 +30,8 @@ if exist "%ROOT%frontend_new" (
         echo [INFO] Installing frontend dependencies...
         npm install
     )
-    start "FRONTEND" cmd /k "title FRONTEND && npm run dev"
+    REM same explicit directory trick for frontend
+    start "FRONTEND" cmd /k "cd /d \"%CD%\" && title FRONTEND && npm run dev"
     popd
 ) else (
     echo [WARN] frontend_new folder not found: %ROOT%frontend_new
