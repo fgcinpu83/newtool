@@ -1,15 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
-import { GatewayModule } from './gateway.module';
-import { MinimalDebugController } from './debug/minimal.controller';
-import { MinimalController } from './minimal.controller';
+import { WorkerModule } from './workers/worker.module';
+import { GatewayModule } from './gateway/gateway.module';
+import { EngineModule } from './engine/engine.module';
 
 @Module({
-    imports: [
-        ScheduleModule.forRoot(),
-        GatewayModule,
-    ],
-    controllers: [MinimalDebugController, MinimalController],
-    providers: [],
+    imports: [WorkerModule, EngineModule, GatewayModule],
 })
-export class AppModule { }
+export class AppModule {}

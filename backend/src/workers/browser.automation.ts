@@ -14,7 +14,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AppGateway } from '../gateway.module';
+
 import { ChromeConnectionManager } from '../managers/chrome-connection.manager';
 
 // Per-account browser session container
@@ -43,7 +43,7 @@ export class BrowserAutomationService implements OnModuleInit {
     private lastLaunchTime = new Map<string, number>();
     private processedRequests = new Set<string>();
 
-    private gateway?: AppGateway;
+
 
     private internalBus?: any;
 
@@ -88,7 +88,7 @@ export class BrowserAutomationService implements OnModuleInit {
             const result = await this.openUrlViaManager(account, port, url);
             // publish events as usual but do not create session
             if (result.success) {
-                this.gateway.sendUpdate('browser:opened', { account, url, action: result.action, tabTitle: result.tabTitle, timestamp: Date.now() });
+
             }
             return;
         }
@@ -97,14 +97,14 @@ export class BrowserAutomationService implements OnModuleInit {
         const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
         const attachInfo = await this.chromeManager.attach(port);
         if (attachInfo.state !== 'CONNECTED') {
-            this.gateway.sendUpdate('browser:error', { account, error: `Chrome ${attachInfo.state} on port ${port}` });
+
             throw new Error(`Chrome not connected on port ${port}`);
         }
 
         // Open or focus tab
         const result = await this.openUrlViaManager(account, port, url);
         if (!result.success) {
-            this.gateway.sendUpdate('browser:error', { account, error: result.error });
+
             throw new Error(result.error || 'open failed');
         }
 
@@ -136,9 +136,9 @@ export class BrowserAutomationService implements OnModuleInit {
         this.logger.log(`[BROWSER][${account}] SESSION_CREATED`);
 
         // Publish opened event with accountId
-        this.gateway.sendUpdate('browser:opened', { account, url, action: result.action, tabTitle: result.tabTitle, timestamp: Date.now() });
+
         try { this.internalBus && typeof this.internalBus.publish === 'function' && this.internalBus.publish('BROWSER_OPENED', { account, url, action: result.action, tabTitle: result.tabTitle }); } catch (e) {}
-        this.gateway.sendUpdate('EXECUTE_AUTOMATION', { account, url });
+
     }
 
     // Simplified API: open a real Chrome tab via /json/new and return session or null
@@ -198,15 +198,15 @@ export class BrowserAutomationService implements OnModuleInit {
         this.logger.log(`[BROWSER][${account}] SESSION_CLEANING`);
         try { await session.cleanup(); } catch (e) {}
         // delegate actual tab close to extension/manager via gateway
-        this.gateway.sendUpdate('browser:close', { account });
-        this.gateway.sendUpdate('browser:closed', { account, timestamp: Date.now() });
+
+
         this.sessions.delete(account);
         this.logger.log(`[BROWSER][${account}] SESSION_CLEANED`);
     }
 
     async onModuleInit() {
         // Resolve gateway lazily to avoid circular DI issues
-        try { this.gateway = this.moduleRef.get(AppGateway, { strict: false }); } catch (e) { /* ignore */ }
+
 
         this.logger.log(`BrowserAutomationService v5.0 CONSTITUTION MODE (ID: ${this.instanceId})`);
 
@@ -228,7 +228,7 @@ export class BrowserAutomationService implements OnModuleInit {
             if (cmdRouter && typeof cmdRouter.register === 'function') {
                 try {
                     cmdRouter.register('BROWSER_CMD', async (c: any) => {
-                        try { this.gateway.sendUpdate('browser:command', c.payload); } catch (e) { this.logger.error('BROWSER_CMD failed', e) }
+
                     });
                     cmdRouter.register('OPEN_BROWSER', async (c: any) => { await this.handleBrowserStart(c.payload || {}); });
                     cmdRouter.register('FOCUS_TAB', async (c: any) => { await this.focusTab(c.payload || {}); });
@@ -245,7 +245,7 @@ export class BrowserAutomationService implements OnModuleInit {
         try { this.internalBus && this.internalBus.on && this.internalBus.on('REQUEST_BROWSER_CMD', (payload: any) => {
             try {
                 this.logger.log(`Handling internal REQUEST_BROWSER_CMD: ${JSON.stringify(payload)}`);
-                this.gateway.sendUpdate('browser:command', payload);
+
             } catch (e) { this.logger.error('Internal REQUEST_BROWSER_CMD failed', e as any) }
         }); } catch(e) { /* ignore */ }
 
@@ -325,7 +325,7 @@ export class BrowserAutomationService implements OnModuleInit {
         this.lastLaunchTime.set(account, Date.now());
 
         if (!url || url.trim() === '') {
-            this.gateway.sendUpdate('browser:error', { account, error: 'URL is empty.' });
+
             return;
         }
 
@@ -336,7 +336,7 @@ export class BrowserAutomationService implements OnModuleInit {
             await this.ensureBrowser(account, url, requestId);
         } catch (e) {
             this.logger.error(`[BROWSER][${account}] OPEN_FAILED`, e as any);
-            this.gateway.sendUpdate('browser:error', { account, error: (e && (e as Error).message) || String(e) });
+
         }
     }
 
@@ -392,7 +392,7 @@ export class BrowserAutomationService implements OnModuleInit {
         const url = this.accountUrls.get(account);
 
         if (!url) {
-            this.gateway.sendUpdate('browser:error', { account, error: `No URL registered for account ${account}` });
+
             return;
         }
 
@@ -402,7 +402,7 @@ export class BrowserAutomationService implements OnModuleInit {
 
         const port = ChromeConnectionManager.portFor(account as 'A' | 'B');
         if (!this.chromeManager.isConnected(port)) {
-            this.gateway.sendUpdate('browser:error', { account, error: 'Chrome not connected' });
+
             return;
         }
 
@@ -411,9 +411,9 @@ export class BrowserAutomationService implements OnModuleInit {
 
         if (match) {
             await this.chromeManager.focusTab(port, match.id);
-            this.gateway.sendUpdate('browser:focused', { account, tabTitle: match.title });
+
         } else {
-            this.gateway.sendUpdate('browser:error', { account, error: `No tab found matching: ${url}` });
+
         }
     }
 
@@ -421,12 +421,7 @@ export class BrowserAutomationService implements OnModuleInit {
 
     private async reportChromeStatus() {
         const info = this.chromeManager.getInfo(9222);
-        this.gateway.sendUpdate('chrome:status', {
-            connected: info.state === 'CONNECTED',
-            tabs: info.tabs,
-            state: info.state,
-            error: info.errorMessage,
-        });
+        this.logger.log(`[CHROME STATUS] connected=${info.state === 'CONNECTED'}, tabs=${info.tabs}, state=${info.state}, error=${info.errorMessage}`);
     }
 
     // ─── CLOSE ──────────────────────────────────────
