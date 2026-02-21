@@ -1,11 +1,9 @@
-export type FSMState = 'IDLE' | 'STARTING' | 'WAIT_PROVIDER' | 'ACTIVE' | 'STOPPING'
+// Frontend-defined contract.  Backend is expected to return this shape
+// verbatim; the frontend code assumes it and no further transformation is
+// performed.  Fields marked "optional" are emitted by the backend for
+// compatibility or extra features but are not relied upon by the core UI.
 
-export interface ConnectionState {
-  backendConnected: boolean
-  chromeConnected: boolean
-  injectedReady: boolean
-  cdpReady: boolean
-}
+export type FSMState = 'IDLE' | 'STARTING' | 'WAIT_PROVIDER' | 'ACTIVE' | 'STOPPING'
 
 export interface FSM {
   state: FSMState
@@ -51,17 +49,35 @@ export interface LogEntry {
   message: string
 }
 
+export interface AccountStatus {
+  active: boolean
+  ping: number | null
+  providerStatus: 'RED' | 'GREEN'
+  balance: number | null
+}
+
 export interface BackendState {
-  connection: ConnectionState
+  /**
+   * simple connection flag; clients may augment but backend owns truth
+   */
+  connection: boolean
   fsm: FSM
+  /**
+   * frontend-driven accounts map; backend must produce exactly this shape
+   */
+  accounts: {
+    A: AccountStatus
+    B: AccountStatus
+  }
   gravity: GravityState
   sensors: SensorReading[]
   opportunities: Opportunity[]
   executionHistory: ExecutionRecord[]
   logs: LogEntry[]
-  // Optional compatibility fields emitted by backend
+  // legacy compatibility; to be removed once UI fully migrated
   accountA_active?: boolean
   accountB_active?: boolean
   providers?: any
+  system?: any
 }
 

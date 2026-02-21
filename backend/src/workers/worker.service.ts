@@ -53,9 +53,10 @@ export class WorkerService {
       this.accounts[accountId].browserSession = session;
     }
 
-    // Explicit minimal setter for providerMarked
-    markProvider(accountId: 'A' | 'B') {
+    // Explicit minimal setter for providerMarked and providerId
+    markProvider(accountId: 'A' | 'B', providerId: string) {
       this.accounts[accountId].providerMarked = true;
+      this.accounts[accountId].providerId = providerId;
     }
   private accounts: Record<'A' | 'B', AccountRuntime> = {
     A: {

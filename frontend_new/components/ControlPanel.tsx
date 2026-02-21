@@ -24,10 +24,10 @@ export default function ControlPanel({ state }: { state: BackendState }) {
             </button>
 
             <button
-              disabled={state.fsm.state !== 'RUNNING'}
+              disabled={state.fsm.state !== 'ACTIVE'}
               onClick={async () => await toggleAccount('A', false)}
               className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
-                state.fsm.state === 'RUNNING'
+                state.fsm.state === 'ACTIVE'
                   ? 'bg-danger hover:bg-danger/90 text-white'
                   : 'bg-background-dark text-slate-400 cursor-not-allowed'
               }`}
@@ -51,10 +51,10 @@ export default function ControlPanel({ state }: { state: BackendState }) {
             </button>
 
             <button
-              disabled={state.fsm.state !== 'RUNNING'}
+              disabled={state.fsm.state !== 'ACTIVE'}
               onClick={async () => await toggleAccount('B', false)}
               className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
-                state.fsm.state === 'RUNNING'
+                state.fsm.state === 'ACTIVE'
                   ? 'bg-danger hover:bg-danger/90 text-white'
                   : 'bg-background-dark text-slate-400 cursor-not-allowed'
               }`}

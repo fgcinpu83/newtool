@@ -27,8 +27,12 @@ export default function LogsPanel({ state }: { state?: BackendState }) {
 
   // If no state passed, ErrorStream will show empty placeholder
   const emptyState: BackendState = state || {
-    connection: { backendConnected: false, chromeConnected: false, injectedReady: false, cdpReady: false },
+    connection: false,
     fsm: { state: 'IDLE' },
+    accounts: {
+      A: { active: false, ping: null, providerStatus: 'RED', balance: null },
+      B: { active: false, ping: null, providerStatus: 'RED', balance: null },
+    },
     gravity: { mode: 'STANDBY', activeOpportunities: 0 },
     sensors: [],
     opportunities: [],

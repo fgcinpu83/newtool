@@ -19,10 +19,30 @@ export class AppGateway {
   handlePing(
     @MessageBody() payload: { account: 'A' | 'B'; ts: number },
   ) {
-    this.engine.setPing(payload.account, Date.now() - payload.ts);
+    const latency = Date.now() - payload.ts;
+    this.engine.setPing(payload.account, latency);
+    this.server.emit('backend_state', this.engine.getState());
+  }
+
+  @SubscribeMessage('PROVIDER_MARKED')
+  handleProviderMarked(
+    @MessageBody() payload: { account: 'A' | 'B'; providerId: string },
+  ) {
+    this.engine.markProvider(payload.account, payload.providerId);
+    this.broadcastState();
+  }
+
+  @SubscribeMessage('STREAM_DETECTED')
+  handleStream(
+    @MessageBody() payload: { account: 'A' | 'B' },
+  ) {
+    this.engine.handleStreamDetected(payload.account);
+    this.server.emit('backend_state', this.engine.getState());
   }
 
   broadcastState() {
-    this.server.emit('state_update', this.engine.getState());
+    const st = this.engine.getState();
+    // frontend only expects `backend_state`
+    this.server.emit('backend_state', st);
   }
 }

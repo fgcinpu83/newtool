@@ -84,11 +84,11 @@ export function sendCommand(command: string, payload?: unknown) {
   s.emit('command', { type: command, payload })
 }
 
-export async function toggleAccount(accountId: 'A' | 'B', enabled: boolean) {
+export async function toggleAccount(accountId: 'A' | 'B', active: boolean) {
   await fetch(REST_BASE + '/api/toggle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ account: accountId, active: enabled })
+    body: JSON.stringify({ account: accountId, active })
   })
 
   // refresh backend snapshot and notify UI

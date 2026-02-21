@@ -34,6 +34,31 @@ See `backend/src/workers/worker.service.ts` and `backend/src/workers/browser.aut
 
 ---
 
+
+## 🧱 Frontend‑Driven State Contract
+
+The UI is now the **single source of truth** for the shape of the `BackendState`
+that the server returns.  The `frontend_new/types.ts` file defines this interface
+and any changes to state fields *must* be made there first; backend code must
+continue to return an object that exactly matches that type (no additional
+wrapping or adapter layers).
+
+Key points:
+
+1. `EngineService.getState()` transforms internal `WorkerService` runtime data
+   into the frontend contract.  The worker itself remains a private runtime.
+2. The `/api/toggle` endpoint now expects `{ account:'A'|'B', active:boolean }`
+   (frontend decides the naming).
+3. WebSocket updates are emitted on a single channel, `backend_state`.
+   The legacy `state_update` channel has been removed.
+4. Clients may still poll `/api/system/state` and `/api/logs` as fallbacks;
+   the responses return the same shape as the WebSocket payload.
+
+Maintainers must treat the frontend `BackendState` type as an API spec and
+coordinate UI/backend changes through normal version control.
+
+---
+
 ## 🔐 Phase 1 — Execution Hardening (new)
 
 This release adds execution safety controls for the backend only (Phase 1 hardening).
@@ -231,7 +256,6 @@ Admin Panel:
 - CI Safe Mode: ENABLED (Chrome/CDP mocked in CI/test)
 - FSM (Master Context v4.0): IDLE | STARTING | WAIT_PROVIDER | ACTIVE | STOPPING
 - No background auto-recovery or hidden retries
-- WebSocket: emits `state_update` with payload { accounts: { A: {...}, B: {...} } } (includes `ping` inside each account runtime)
 - No Global State Leaks: VERIFIED
 
 ---

@@ -23,7 +23,6 @@
 
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ChromeConnectionManager } from './chrome-connection.manager';
-import { WorkerService } from '../workers/worker.service';
 import WebSocket from 'ws';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -72,8 +71,6 @@ export class CDPSessionManager {
     constructor(
         @Inject(forwardRef(() => ChromeConnectionManager))
         private readonly chromeManager: ChromeConnectionManager,
-        @Inject(forwardRef(() => WorkerService))
-        private readonly worker: WorkerService,
     ) {
         for (const port of [9222, 9223]) {
             this.sessions.set(port, {
@@ -223,13 +220,11 @@ export class CDPSessionManager {
                 attachedAt: null,
                 errorMessage: err.message,
             });
-            // propagate account reset
+            // propagate account reset (no automatic FSM change in minimal)
             try {
                 const acc = CDPSessionManager.accountFor(port);
                 if (acc) {
                     this.logger.log(`[SYSTEM_LOG] CDP attach error on account ${acc} port ${port}: ${err.message}`);
-                    this.worker.transition(acc, 'STOPPING');
-                    this.worker.transition(acc, 'IDLE');
                 }
             } catch(e) {}
             this.logger.error(`[${port}] CDP attach FAILED — ${err.message}`);
@@ -304,8 +299,6 @@ export class CDPSessionManager {
                 const acc = CDPSessionManager.accountFor(port);
                 if (acc) {
                     this.logger.log(`[SYSTEM_LOG] CDP WS error on account ${acc} port ${port}: WebSocket not open`);
-                    this.worker.transition(acc, 'STOPPING');
-                    this.worker.transition(acc, 'IDLE');
                 }
             } catch (e) {}
             throw new Error(`[CDPSessionManager] WebSocket not open on port ${port}`);

@@ -1,8 +1,7 @@
 🏛 MASTER CONTEXT — MINIMAL STABLE ENGINE
-
-Version: 4.0 (Authoritative Constitution)
-Status: FINAL & LOCKED
-
+Version: 5.0
+Architecture Model: Frontend-Driven Contract
+Status: Authoritative & Locked
 1️⃣ SYSTEM PURPOSE
 
 Deterministic Desktop Arbitrage Engine
@@ -13,9 +12,9 @@ System guarantees:
 
 Strict account isolation
 
-Deterministic transitions
+Deterministic FSM transitions
 
-Single backend brain
+Single backend runtime brain
 
 No hidden retry logic
 
@@ -23,10 +22,12 @@ No automatic recovery
 
 No dual backend architecture
 
+Frontend-defined state contract
+
 2️⃣ ARCHITECTURE (LOCKED)
 ✅ Single Backend: NestJS ONLY
 
-FastAPI is constitutionally removed.
+FastAPI constitutionally removed.
 
 Ports:
 
@@ -40,20 +41,52 @@ No second backend allowed.
 
 Runtime Topology
 React UI (3000)
-     ↓ REST / WS
-NestJS Orchestrator (3001)
-     ↓
-WorkerService (FSM per account)
-     ↓
+        ↓ REST / WS
+NestJS Engine (3001)
+        ↓
+EngineService (Adapter Layer)
+        ↓
+WorkerService (FSM Brain)
+        ↓
 BrowserAutomationService (CDP 9222)
-     ↓
+        ↓
 Chrome Instance (1 profile per account)
-     ↓
+        ↓
 Extension (Provider marking + stream)
+Authority Model
 
-Single source of truth = NestJS memory state.
+WorkerService = runtime brain
 
-3️⃣ CORE SERVICES
+EngineService = adapter to UI contract
+
+Frontend = authoritative state contract definition
+
+Single runtime memory state lives in NestJS.
+Single state shape definition lives in frontend types.
+
+3️⃣ FRONTEND-DRIVEN CONTRACT LAW (NEW)
+BackendState in frontend/types.ts is authoritative.
+
+Backend must conform to the exact state shape defined by UI.
+
+Rules:
+
+EngineService.getState() MUST return exactly BackendState.
+
+No client-side transformation layer allowed.
+
+No legacy compatibility mapping allowed.
+
+Only one WebSocket event allowed: backend_state.
+
+REST payload fields must match frontend naming exactly.
+
+If UI changes shape → backend must adapt.
+
+Frontend owns contract.
+Backend owns execution logic.
+
+4️⃣ CORE SERVICES
 WorkerService
 
 Holds:
@@ -64,7 +97,30 @@ accounts = {
 }
 
 Single orchestrator brain.
+
 No global mutable cross-account state.
+
+No provider registry.
+No pairing engine.
+No discovery layer.
+
+EngineService
+
+Acts as:
+
+Adapter between Worker runtime and BackendState contract.
+
+Controller for toggle and stream transitions.
+
+Gateway bridge.
+
+EngineService may NOT:
+
+Hold runtime state independently.
+
+Bypass WorkerService.
+
+Maintain shadow state.
 
 BrowserAutomationService
 
@@ -76,26 +132,24 @@ closeBrowser(accountId)
 No retries.
 No implicit spawn.
 No auto relaunch.
+No background loop.
 
 Extension Contract
 
-Extension may only:
-
-Emit:
+Extension may only emit:
 
 PROVIDER_MARKED(accountId)
-
-STREAM_PACKET(accountId, data)
+STREAM_PACKET(accountId)
 
 Extension may NOT:
+
+Modify backend state directly
 
 Control FSM
 
 Trigger arbitrage
 
-Modify backend state directly
-
-4️⃣ ACCOUNT RUNTIME (LOCKED STRUCTURE)
+5️⃣ ACCOUNT RUNTIME (LOCKED STRUCTURE)
 AccountRuntime {
   accountId: 'A' | 'B'
   state: IDLE | STARTING | WAIT_PROVIDER | ACTIVE | STOPPING
@@ -103,12 +157,13 @@ AccountRuntime {
   browserSession: object | null
   providerMarked: boolean
   streamActive: boolean
+  ping: number | null
 }
 
 No extra flags allowed.
 No legacy states allowed.
 
-5️⃣ FSM LAW (NON-NEGOTIABLE)
+6️⃣ FSM LAW (NON-NEGOTIABLE)
 
 Valid transitions only:
 
@@ -118,13 +173,17 @@ WAIT_PROVIDER → ACTIVE
 ACTIVE → STOPPING
 STOPPING → IDLE
 
-Invalid transitions = rejected + system_log.
+Invalid transitions:
+
+Rejected
+
+system_log emitted
 
 FSM must never remain in STARTING.
 
 No hidden transitions allowed.
 
-6️⃣ TOGGLE LAW
+7️⃣ TOGGLE LAW
 Toggle ON
 
 Direct actions only:
@@ -134,10 +193,10 @@ openBrowser()
 → WAIT_PROVIDER
 
 No retries.
-No event tokens.
 No background guards.
+No event tokens.
 
-Provider must be marked explicitly.
+Provider must be explicitly marked.
 
 Provider Marked
 
@@ -152,7 +211,6 @@ First Stream Packet
 STREAM_PACKET(accountId)
 
 → state = ACTIVE
-→ observer starts
 
 Toggle OFF (Hard Reset Law)
 
@@ -170,7 +228,7 @@ state → IDLE
 
 No partial reset allowed.
 
-7️⃣ ENGINE GATING LAW
+8️⃣ ENGINE GATING LAW
 
 Arbitrage Engine may run only if:
 
@@ -179,15 +237,15 @@ Account B state == ACTIVE
 
 No exception.
 
-8️⃣ STORAGE LAW (LOCKED)
+9️⃣ STORAGE LAW
 
 SQLite mandatory for:
-
-provider_contracts
 
 execution_history
 
 hedge_events
+
+Provider contracts optional in Phase-1.
 
 Redis:
 
@@ -199,7 +257,7 @@ Not required for audit
 
 System must boot without Redis.
 
-9️⃣ CI SAFE MODE LAW
+🔟 CI SAFE MODE LAW
 
 When:
 
@@ -213,7 +271,7 @@ Mock ChromeLauncher
 
 Mock CDP attach
 
-No 9222 HTTP probe
+No 9222 probe
 
 No real WebSocket
 
@@ -225,13 +283,15 @@ No external side-effects
 
 CI must be deterministic.
 
-🔟 FRONTEND PURITY LAW
+1️⃣1️⃣ FRONTEND AUTHORITY LAW (UPDATED)
 
-Frontend may:
+Frontend:
 
-Render backend state
+Defines BackendState
 
-Send toggle / commands
+Controls toggle flow
+
+Renders state
 
 Frontend may NOT:
 
@@ -239,13 +299,13 @@ Execute arbitrage logic
 
 Parse provider traffic
 
-Maintain business state
+Maintain hidden fallback state
 
-Create fallback state
+Reconstruct backend state
 
-Backend = single authority.
+No transformation layer allowed in frontend.
 
-11️⃣ ERROR HANDLING LAW
+1️⃣2️⃣ ERROR HANDLING LAW
 
 All fatal conditions must:
 
@@ -253,13 +313,11 @@ Emit structured system_log
 
 Reset FSM safely
 
-Release execution locks
-
 Never crash process
 
 No uncaught promise rejection
 
-12️⃣ WHAT IS REMOVED FOREVER
+1️⃣3️⃣ WHAT IS REMOVED FOREVER
 
 Dual backend (FastAPI removed)
 
@@ -267,7 +325,7 @@ Token-based FSM
 
 Compatibility ping wrappers
 
-Dual naming (primary_ping_ms vs accountA_ping)
+Dual naming conventions
 
 Automatic retry loops
 
@@ -275,7 +333,9 @@ Background self-healing
 
 Multi-provider per account (Phase 1 forbidden)
 
-13️⃣ PHASE STATUS
+Client-side state transformation layer
+
+1️⃣4️⃣ PHASE STATUS
 
 Phase 1 = Minimal Stable Engine
 Scope:
@@ -286,11 +346,11 @@ Scope:
 
 Deterministic manual workflow
 
-No distributed coordination
+Single instance only
 
 Status: Constitutionally Locked.
 
-14️⃣ FUTURE PHASE (NOT ACTIVE)
+1️⃣5️⃣ FUTURE PHASE (NOT ACTIVE)
 
 Multi-provider per account
 
@@ -302,22 +362,20 @@ Multi-instance coordination
 
 Not part of current engine.
 
-15️⃣ CURRENT SYSTEM STATUS
+1️⃣6️⃣ CURRENT SYSTEM STATUS
 Component	Status
 Account Isolation	ENFORCED
-Provider Contract	ENFORCED
-Atomic Execution	ENFORCED
-Hedge Protocol	ACTIVE
-Exposure Caps	ACTIVE
-Audit Logging	MANDATORY
-Double-Run Protection	ACTIVE
-Watchdog	ACTIVE (Prod only)
+FSM Determinism	ENFORCED
+Frontend Contract	AUTHORITATIVE
+Adapter Layer	ENFORCED
+Dual Backend	ELIMINATED
+Legacy State Mapping	ELIMINATED
 CI Safe Mode	ACTIVE
 Global State Leak	ELIMINATED
 
 System is deterministic and production-safe (single instance).
 
-FINAL CONSTITUTIONAL CLAUSE
+🏛 FINAL CONSTITUTIONAL CLAUSE
 
 Any deviation from this document requires:
 
