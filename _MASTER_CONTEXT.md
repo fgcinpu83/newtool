@@ -385,4 +385,4 @@ Version bump
 
 Migration note
 
-No silent architectural change allowed.
+No silent architectural change allowed.npm error Missing script: "start"
